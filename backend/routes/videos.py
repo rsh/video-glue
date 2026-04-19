@@ -1,6 +1,5 @@
 """Video routes: list, fetch, stream, segments."""
 from pathlib import Path
-
 from typing import Any
 
 from flask import Blueprint, abort, jsonify, send_file

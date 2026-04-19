@@ -251,7 +251,10 @@ function renderAll(): void {
   renderGrid();
   renderTimeline();
   renderPanel();
-  if (previewHandle) previewHandle.setClips(state.clips);
+  if (previewHandle) {
+    previewHandle.setVideoStates(state.videos);
+    previewHandle.setClips(state.clips);
+  }
 }
 
 function renderGrid(): void {
@@ -552,6 +555,7 @@ function startVideoPolling(): void {
       if (grew) {
         // No-op: grid already re-renders above.
       }
+      if (previewHandle) previewHandle.setVideoStates(state.videos);
       const anyActive = state.videos.some(
         (v) =>
           [

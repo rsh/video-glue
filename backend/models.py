@@ -9,6 +9,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.sql.schema import Table
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import preview_cache
+
 db = SQLAlchemy()
 
 
@@ -107,6 +109,15 @@ class Video(db.Model):  # type: ignore[name-defined,misc]
             return self.fps_num / self.fps_den
         return None
 
+    @property
+    def preview_ready(self) -> bool:
+        """True when an HTML5 <video> can actually play this for preview."""
+        if self.container and self.codec and not preview_cache.needs_proxy(
+            self.container, self.codec
+        ):
+            return True
+        return self.preview_proxy_status == "ready"
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
@@ -133,6 +144,7 @@ class Video(db.Model):  # type: ignore[name-defined,misc]
                 else None
             ),
             "preview_proxy_error_message": self.preview_proxy_error_message,
+            "preview_ready": self.preview_ready,
             "error_message": self.error_message,
             "discovered_at": self.discovered_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),

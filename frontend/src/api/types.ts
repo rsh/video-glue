@@ -38,6 +38,7 @@ export interface Video {
   preview_proxy_status: PreviewProxyStatus;
   preview_proxy_started_at: string | null;
   preview_proxy_error_message: string | null;
+  preview_ready: boolean;
   error_message: string | null;
   discovered_at: string;
   updated_at: string;
