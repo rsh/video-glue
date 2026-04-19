@@ -46,11 +46,15 @@ def has_proxy(video_id: int) -> bool:
 def generate(source: Path, dest: Path) -> None:
     """Transcode source to a browser-friendly MP4 at dest (atomic rename)."""
     dest.parent.mkdir(parents=True, exist_ok=True)
+    # Keep a ".part" temp so crashed runs don't leave a file that looks
+    # finished. Force `-f mp4` because ffmpeg can't infer the muxer from
+    # the ".part" extension.
     tmp = dest.with_suffix(dest.suffix + ".part")
     flags = shlex.split(
         "-hide_banner -loglevel error -y "
         "-c:v libx264 -crf 23 -preset veryfast "
-        "-pix_fmt yuv420p -movflags +faststart -an"
+        "-pix_fmt yuv420p -movflags +faststart -an "
+        "-f mp4"
     )
     cmd = [config.FFMPEG_BIN, *flags[:3], "-i", str(source), *flags[3:], str(tmp)]
     try:
