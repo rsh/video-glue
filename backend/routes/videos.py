@@ -4,6 +4,7 @@ from pathlib import Path
 from flask import Blueprint, Response, abort, send_file
 from sqlalchemy import func
 
+import preview_cache
 from auth import login_required
 from models import Segment, User, Video, db
 
@@ -61,6 +62,10 @@ def stream_video(video_id: int, current_user: User) -> Response:
     if video is None:
         abort(404)
     path = Path(video.path)
+    if preview_cache.needs_proxy(video.container, video.codec):
+        proxy = preview_cache.proxy_path(video_id)
+        if proxy.exists():
+            return send_file(proxy, conditional=True)
     if not path.exists():
         abort(404)
     return send_file(path, conditional=True)

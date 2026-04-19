@@ -15,6 +15,9 @@ THUMBNAIL_DIR = _resolve(
     os.getenv("VIDEOGLUE_THUMBNAIL_DIR", str(DATA_DIR / "thumbnails"))
 )
 EXPORT_DIR = _resolve(os.getenv("VIDEOGLUE_EXPORT_DIR", str(DATA_DIR / "exports")))
+PREVIEW_CACHE_DIR = _resolve(
+    os.getenv("VIDEOGLUE_PREVIEW_CACHE_DIR", str(DATA_DIR / "preview_cache"))
+)
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATA_DIR / 'video-glue.db'}")
 
@@ -28,5 +31,11 @@ FFPROBE_BIN = os.getenv("FFPROBE_BIN", "ffprobe")
 
 
 def ensure_dirs() -> None:
-    for p in (DATA_DIR, VIDEO_LIBRARY_DIR, THUMBNAIL_DIR, EXPORT_DIR):
+    for p in (
+        DATA_DIR,
+        VIDEO_LIBRARY_DIR,
+        THUMBNAIL_DIR,
+        EXPORT_DIR,
+        PREVIEW_CACHE_DIR,
+    ):
         p.mkdir(parents=True, exist_ok=True)

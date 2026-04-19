@@ -19,6 +19,7 @@ from typing import Optional
 
 import config
 import export as export_mod
+import preview_cache
 import scanners
 import thumbnails
 from models import CompositionClip, ExportJob
@@ -56,6 +57,7 @@ def _probe_one(video: Video) -> None:
     video.fps_den = result.fps_den
     video.total_frames = result.total_frames
     video.container = result.container
+    video.codec = result.codec
     video.status = "probed"
     video.error_message = None
     db.session.commit()
@@ -195,6 +197,39 @@ def _scan_one(video: Video, scanner_name: str = "hard_cut") -> None:
     db.session.commit()
 
 
+def _find_video_needing_preview_proxy() -> Optional[Video]:
+    """Return the oldest ready video whose source needs a proxy that's missing."""
+    candidates = (
+        Video.query.filter(
+            Video.status == "ready",
+            Video.container.isnot(None),
+            Video.codec.isnot(None),
+            db.or_(
+                Video.container.notin_(preview_cache.COMPATIBLE_CONTAINERS),
+                Video.codec.notin_(preview_cache.COMPATIBLE_CODECS),
+            ),
+        )
+        .order_by(Video.discovered_at.asc())
+        .all()
+    )
+    for v in candidates:
+        if not preview_cache.has_proxy(v.id):
+            return v
+    return None
+
+
+def _ensure_preview_proxy(video: Video) -> None:
+    src = Path(video.path)
+    if not src.exists():
+        return
+    dest = preview_cache.proxy_path(video.id)
+    logger.info("building preview proxy for video %s (%s)", video.id, video.path)
+    try:
+        preview_cache.generate(src, dest)
+    except preview_cache.ProxyError as e:
+        logger.warning("preview proxy failed for %s: %s", video.path, e)
+
+
 def _run_export(job: ExportJob) -> None:
     job.status = "running"
     db.session.commit()
@@ -292,7 +327,16 @@ def tick(app) -> bool:
                 db.session.commit()
             return True
 
-        # 3. Run any queued exports.
+        # 3. Build preview proxies for browser-incompatible containers (e.g. AVI).
+        needs_proxy_video = _find_video_needing_preview_proxy()
+        if needs_proxy_video is not None:
+            try:
+                _ensure_preview_proxy(needs_proxy_video)
+            except Exception:  # noqa: BLE001
+                logger.exception("preview proxy crashed")
+            return True
+
+        # 4. Run any queued exports.
         job = (
             ExportJob.query.filter_by(status="queued")
             .order_by(ExportJob.created_at.asc())
