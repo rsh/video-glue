@@ -13,6 +13,7 @@ import type {
   RegisterRequest,
   ScannerInfo,
   Segment,
+  SubtitleHit,
   User,
   Video,
 } from "./types";
@@ -230,6 +231,16 @@ export class ApiClient {
 
   public exportDownloadUrl(id: number): string {
     return this.urlWithToken(`/api/exports/${id}/download`);
+  }
+
+  // ---- subtitles ----
+
+  public async searchSubtitles(q: string, limit: number = 200): Promise<SubtitleHit[]> {
+    const params = new URLSearchParams({ q, limit: String(limit) });
+    const response = await this.request<{ results: SubtitleHit[] }>(
+      `/api/subtitles/search?${params.toString()}`
+    );
+    return response.results;
   }
 }
 

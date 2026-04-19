@@ -16,6 +16,7 @@ export type {
   RegisterRequest,
   ScannerInfo,
   Segment,
+  SubtitleHit,
   User,
   Video,
   VideoStatus,

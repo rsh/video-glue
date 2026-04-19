@@ -9,7 +9,8 @@ disable=
     missing-class-docstring,
     missing-function-docstring,
     invalid-name,
-    fixme
+    fixme,
+    duplicate-code
 
 [FORMAT]
 max-line-length=88

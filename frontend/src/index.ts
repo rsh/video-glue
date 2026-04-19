@@ -15,6 +15,7 @@ import {
   type ExportFormat,
   type ExportJob,
   type Segment,
+  type SubtitleHit,
   type Video,
 } from "./api";
 import {
@@ -29,6 +30,7 @@ import {
   createLoginForm,
   createPreview,
   createRegisterForm,
+  createSubtitleSearch,
   createTimeline,
   createVideoGrid,
   showError,
@@ -37,6 +39,8 @@ import {
 } from "./components";
 
 // ---------- global editor state ----------
+
+type TopView = "library" | "search";
 
 interface EditorState {
   videos: Video[];
@@ -51,6 +55,9 @@ interface EditorState {
   exportJob: ExportJob | null;
   exportDownloadUrl: string | null;
   dirty: boolean;
+  topView: TopView;
+  subtitleQuery: string;
+  subtitleResults: SubtitleHit[];
 }
 
 const state: EditorState = {
@@ -66,6 +73,9 @@ const state: EditorState = {
   exportJob: null,
   exportDownloadUrl: null,
   dirty: false,
+  topView: "library",
+  subtitleQuery: "",
+  subtitleResults: [],
 };
 
 let previewHandle: PreviewHandle | null = null;
@@ -248,17 +258,55 @@ function renderGrid(): void {
   const host = document.getElementById("vg-grid-pane");
   if (!host) return;
   host.innerHTML = "";
-  host.appendChild(
-    createVideoGrid({
-      videos: state.videos,
-      segmentsByVideo: state.segmentsByVideo,
-      scannerFilter: state.scannerFilter,
-      expanded: state.expandedVideos,
-      onRescan: handleRescanLibrary,
-      onScanVideo: handleRescanVideo,
-      onToggleExpand: handleToggleExpand,
-    })
-  );
+  host.appendChild(renderTopPaneToggle());
+  if (state.topView === "library") {
+    host.appendChild(
+      createVideoGrid({
+        videos: state.videos,
+        segmentsByVideo: state.segmentsByVideo,
+        scannerFilter: state.scannerFilter,
+        expanded: state.expandedVideos,
+        onRescan: handleRescanLibrary,
+        onScanVideo: handleRescanVideo,
+        onToggleExpand: handleToggleExpand,
+      })
+    );
+  } else {
+    host.appendChild(
+      createSubtitleSearch({
+        initialQuery: state.subtitleQuery,
+        initialResults: state.subtitleResults,
+        onSearch: (q, results) => {
+          state.subtitleQuery = q;
+          state.subtitleResults = results;
+        },
+        onError: (m) => showError(m),
+      })
+    );
+  }
+}
+
+function renderTopPaneToggle(): HTMLElement {
+  const bar = document.createElement("div");
+  bar.className = "vg-top-toggle btn-group mb-2";
+  bar.setAttribute("role", "group");
+  bar.innerHTML = `
+    <button type="button" class="btn btn-sm ${
+      state.topView === "library" ? "btn-primary" : "btn-outline-primary"
+    }" data-view="library">Library</button>
+    <button type="button" class="btn btn-sm ${
+      state.topView === "search" ? "btn-primary" : "btn-outline-primary"
+    }" data-view="search">Search subtitles</button>
+  `;
+  bar.querySelectorAll("button[data-view]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const v = (btn as HTMLElement).dataset["view"] as TopView;
+      if (v === state.topView) return;
+      state.topView = v;
+      renderGrid();
+    });
+  });
+  return bar;
 }
 
 function renderTimeline(): void {
@@ -505,9 +553,14 @@ function startVideoPolling(): void {
         // No-op: grid already re-renders above.
       }
       const anyActive = state.videos.some((v) =>
-        ["discovered", "probing", "probed", "scanning", "thumbnailing"].includes(
-          v.status
-        )
+        [
+          "discovered",
+          "probing",
+          "probed",
+          "scanning",
+          "thumbnailing",
+          "subtitles_importing",
+        ].includes(v.status)
       );
       if (!anyActive) stopVideoPolling();
     } catch (err) {

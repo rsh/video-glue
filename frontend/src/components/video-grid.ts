@@ -169,6 +169,7 @@ function statusBadgeHtml(status: Video["status"], progress: number): string {
     probed: "info",
     scanning: "warning",
     thumbnailing: "info",
+    subtitles_importing: "info",
     ready: "success",
     error: "danger",
   };

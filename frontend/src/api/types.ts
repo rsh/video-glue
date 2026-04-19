@@ -15,6 +15,7 @@ export type VideoStatus =
   | "probed"
   | "scanning"
   | "thumbnailing"
+  | "subtitles_importing"
   | "ready"
   | "error";
 
@@ -30,6 +31,7 @@ export interface Video {
   fps: number | null;
   total_frames: number | null;
   container: string | null;
+  codec: string | null;
   status: VideoStatus;
   scan_progress_percent: number;
   scan_started_at: string | null;
@@ -114,6 +116,19 @@ export interface LoginRequest {
 export interface AuthResponse {
   token: string;
   user: User;
+}
+
+export interface SubtitleHit {
+  cue_id: number;
+  video_id: number;
+  video_filename: string;
+  segment_id: number | null;
+  thumbnail_path: string | null;
+  start_pts_seconds: number;
+  end_pts_seconds: number;
+  prev_cue_text: string | null;
+  cue_snippet_html: string;
+  next_cue_text: string | null;
 }
 
 export interface ApiError {

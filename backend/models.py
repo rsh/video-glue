@@ -4,6 +4,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, cast
 
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import event
+from sqlalchemy.engine import Connection
+from sqlalchemy.sql.schema import Table
 from werkzeug.security import check_password_hash, generate_password_hash
 
 db = SQLAlchemy()
@@ -354,3 +357,157 @@ class ExportJob(db.Model):  # type: ignore[name-defined,misc]
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
             "download_available": self.status == "done",
         }
+
+
+class SubtitleTrack(db.Model):  # type: ignore[name-defined,misc]
+    """A single subtitle source imported for a video (embedded stream or sidecar).
+
+    Origin uniquely identifies the source within its kind — the ffprobe stream
+    index for embedded tracks, the absolute sidecar path for sidecar tracks.
+    """
+
+    __tablename__ = "subtitle_tracks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    video_id = db.Column(
+        db.Integer,
+        db.ForeignKey("videos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source = db.Column(db.String(16), nullable=False)  # embedded | sidecar
+    language = db.Column(db.String(8), nullable=True, index=True)
+    origin = db.Column(db.String(1024), nullable=False)
+    cue_count = db.Column(db.Integer, nullable=False, default=0)
+    imported_at = db.Column(db.DateTime, nullable=False, default=_utcnow)
+    meta_json = db.Column(db.Text, nullable=False, default="{}")
+
+    cues = cast(
+        List["SubtitleCue"],
+        db.relationship(
+            "SubtitleCue",
+            back_populates="track",
+            cascade="all, delete-orphan",
+            order_by="SubtitleCue.ordinal",
+        ),
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "video_id", "source", "origin", name="uq_subtitle_track_video_source_origin"
+        ),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "video_id": self.video_id,
+            "source": self.source,
+            "language": self.language,
+            "origin": self.origin,
+            "cue_count": self.cue_count,
+            "imported_at": self.imported_at.isoformat(),
+            "meta": json.loads(self.meta_json or "{}"),
+        }
+
+
+class SubtitleCue(db.Model):  # type: ignore[name-defined,misc]
+    """A single dialogue cue within a track. Half-open frame interval."""
+
+    __tablename__ = "subtitle_cues"
+
+    id = db.Column(db.Integer, primary_key=True)
+    track_id = db.Column(
+        db.Integer,
+        db.ForeignKey("subtitle_tracks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    video_id = db.Column(
+        db.Integer,
+        db.ForeignKey("videos.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    language = db.Column(db.String(8), nullable=True, index=True)
+    ordinal = db.Column(db.Integer, nullable=False)
+    start_frame = db.Column(db.Integer, nullable=False)
+    end_frame = db.Column(db.Integer, nullable=False)
+    start_pts_seconds = db.Column(db.Float, nullable=False)
+    end_pts_seconds = db.Column(db.Float, nullable=False)
+    text = db.Column(db.Text, nullable=False)
+
+    track = cast(
+        "SubtitleTrack",
+        db.relationship("SubtitleTrack", back_populates="cues"),
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "track_id", "ordinal", name="uq_subtitle_cue_track_ordinal"
+        ),
+        db.Index("ix_subtitle_cue_video_frames", "video_id", "start_frame"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# FTS5 virtual table + sync triggers.
+#
+# SQLAlchemy's metadata doesn't model SQLite virtual tables or triggers
+# natively, so we hook into the DDL lifecycle: after the regular
+# subtitle_cues table is created, issue the CREATE VIRTUAL TABLE and three
+# triggers in the same transaction. Contentless FTS5 (content=subtitle_cues,
+# content_rowid=id) avoids duplicating the text column.
+# ---------------------------------------------------------------------------
+
+
+_FTS_DDL_STATEMENTS = (
+    """
+    CREATE VIRTUAL TABLE IF NOT EXISTS subtitle_cues_fts USING fts5(
+        text,
+        content='subtitle_cues',
+        content_rowid='id',
+        tokenize='porter unicode61'
+    )
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS subtitle_cues_ai
+    AFTER INSERT ON subtitle_cues
+    BEGIN
+        INSERT INTO subtitle_cues_fts(rowid, text) VALUES (new.id, new.text);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS subtitle_cues_ad
+    AFTER DELETE ON subtitle_cues
+    BEGIN
+        INSERT INTO subtitle_cues_fts(subtitle_cues_fts, rowid, text)
+            VALUES ('delete', old.id, old.text);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS subtitle_cues_au
+    AFTER UPDATE ON subtitle_cues
+    BEGIN
+        INSERT INTO subtitle_cues_fts(subtitle_cues_fts, rowid, text)
+            VALUES ('delete', old.id, old.text);
+        INSERT INTO subtitle_cues_fts(rowid, text) VALUES (new.id, new.text);
+    END
+    """,
+)
+
+
+def _after_subtitle_cues_create(
+    target: Table, connection: Connection, **_: Any
+) -> None:
+    # Only applies to SQLite; no-op on other backends (not that we have any).
+    dialect = connection.engine.dialect.name
+    if dialect != "sqlite":
+        return
+    for stmt in _FTS_DDL_STATEMENTS:
+        connection.exec_driver_sql(stmt.strip())
+
+
+event.listen(
+    SubtitleCue.__table__, "after_create", _after_subtitle_cues_create
+)

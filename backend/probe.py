@@ -1,10 +1,10 @@
 """ffprobe wrapper — extract metadata from a video file."""
-# pylint: disable=too-many-locals
+# pylint: disable=too-many-locals,too-many-branches
 import json
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 import config
 
@@ -23,6 +23,7 @@ class ProbeResult:
     total_frames: Optional[int]
     container: Optional[str]
     codec: Optional[str]
+    subtitle_streams: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def _parse_rational(value: str) -> tuple[Optional[int], Optional[int]]:
@@ -104,6 +105,20 @@ def probe(path: Path) -> ProbeResult:
     width = video_stream.get("width")
     height = video_stream.get("height")
 
+    subtitle_streams: List[Dict[str, Any]] = []
+    for s in streams:
+        if s.get("codec_type") != "subtitle":
+            continue
+        tags = s.get("tags") or {}
+        subtitle_streams.append(
+            {
+                "index": s.get("index"),
+                "codec_name": s.get("codec_name"),
+                "language": tags.get("language"),
+                "title": tags.get("title"),
+            }
+        )
+
     return ProbeResult(
         duration_seconds=duration,
         width=int(width) if width is not None else None,
@@ -113,4 +128,5 @@ def probe(path: Path) -> ProbeResult:
         total_frames=total_frames,
         container=container,
         codec=video_stream.get("codec_name"),
+        subtitle_streams=subtitle_streams,
     )

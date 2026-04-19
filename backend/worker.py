@@ -21,6 +21,7 @@ import config
 import export as export_mod
 import preview_cache
 import scanners
+import subtitles as subtitles_mod
 import thumbnails
 from models import CompositionClip, ExportJob
 from models import Scanner as ScannerRow
@@ -192,6 +193,25 @@ def _scan_one(video: Video, scanner_name: str = "hard_cut") -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("thumbnail failed for segment %s: %s", seg.id, e)
             db.session.rollback()
+
+    # Subtitle import — cheap for sidecar/embedded (seconds). Best-effort;
+    # any error is logged and we still advance to "ready" so the user can
+    # continue using the library.
+    video.status = "subtitles_importing"
+    db.session.commit()
+    try:
+        # Re-probe just to list subtitle streams. It's a fast ffprobe call
+        # and keeps us stateless with respect to the earlier probe.
+        result = probe(Path(video.path))
+        streams = result.subtitle_streams
+    except Exception:  # noqa: BLE001
+        logger.exception("subtitle streams re-probe failed for video %s", video.id)
+        streams = []
+    try:
+        subtitles_mod.import_subtitles(video, streams)
+    except Exception:  # noqa: BLE001
+        logger.exception("subtitle import failed for video %s", video.id)
+        db.session.rollback()
 
     video.status = "ready"
     db.session.commit()
