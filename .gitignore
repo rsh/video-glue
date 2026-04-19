@@ -61,3 +61,15 @@ samconfig.toml
 *.key
 credentials
 secrets.json
+
+# video-glue runtime data (library videos, sqlite db, thumbnails, exports)
+data/
+backend/instance/
+
+# SQLite databases anywhere
+*.db
+*.db-shm
+*.db-wal
+
+# Local library dir (some users point VIDEO_LIBRARY_DIR at <repo>/library)
+/library/

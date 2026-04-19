@@ -38,12 +38,21 @@ def decode_token(token: str) -> Optional[Dict[str, Any]]:
 
 
 def get_current_user() -> Optional[User]:
-    """Get current user from request token."""
+    """Get current user from request token.
+
+    Accepts either an ``Authorization: Bearer <token>`` header or a ``?token=``
+    query string (the latter is needed by <video>/<img> tags that can't set
+    request headers).
+    """
+    token: Optional[str] = None
     auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1]
+    if token is None:
+        token = request.args.get("token")
+    if not token:
         return None
 
-    token = auth_header.split(" ")[1]
     payload = decode_token(token)
     if not payload:
         return None

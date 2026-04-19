@@ -1,12 +1,10 @@
-"""Pydantic schemas for request/response validation."""
-from typing import Optional
+"""Pydantic schemas for request validation."""
+from typing import List, Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
-    """Schema for user registration."""
-
     email: EmailStr
     username: str = Field(min_length=3, max_length=120)
     password: str = Field(min_length=8)
@@ -14,7 +12,6 @@ class RegisterRequest(BaseModel):
     @field_validator("username")
     @classmethod
     def username_alphanumeric(cls, v: str) -> str:
-        """Validate username is alphanumeric."""
         if not v.replace("_", "").replace("-", "").isalnum():
             raise ValueError(
                 "Username must be alphanumeric (underscores and hyphens allowed)"
@@ -23,27 +20,31 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    """Schema for user login."""
-
     email: EmailStr
     password: str
 
 
-class TodoCreateRequest(BaseModel):
-    """Schema for creating a todo."""
-
-    title: str = Field(min_length=1, max_length=200)
-    description: Optional[str] = None
-    importance: int = Field(default=2, ge=1, le=4)
-    urgency: int = Field(default=2, ge=1, le=4)
-    status: str = Field(default="pending", pattern="^(pending|in_progress|completed)$")
+class CompositionCreateRequest(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=200)
+    notes: Optional[str] = None
 
 
-class TodoUpdateRequest(BaseModel):
-    """Schema for updating a todo."""
+class CompositionUpdateRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    notes: Optional[str] = None
 
-    title: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = None
-    importance: Optional[int] = Field(None, ge=1, le=4)
-    urgency: Optional[int] = Field(None, ge=1, le=4)
-    status: Optional[str] = Field(None, pattern="^(pending|in_progress|completed)$")
+
+class ClipInput(BaseModel):
+    segment_id: int
+    trim_start_frame: int = Field(default=0, ge=0)
+    trim_end_frame: int = Field(default=0, ge=0)
+
+
+class ClipsReplaceRequest(BaseModel):
+    """Replace the full ordered list of clips on a composition."""
+
+    clips: List[ClipInput]
+
+
+class ExportCreateRequest(BaseModel):
+    format: str = Field(pattern="^(mp4|webm|gif)$")

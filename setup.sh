@@ -1,244 +1,76 @@
 #!/bin/bash
+# Quick setup for video-glue (Flask + TypeScript + SQLite)
 
-# Quick setup script for Flask + TypeScript Web Application
-# Sets up the entire development environment
-
-set -e  # Exit on error
-
-# Parse arguments
-RESET_DB=false
-for arg in "$@"; do
-    if [ "$arg" == "--reset-db" ]; then
-        RESET_DB=true
-    fi
-done
+set -e
 
 echo "================================"
-echo "Web Application Setup"
+echo "video-glue setup"
 echo "================================"
 echo ""
 
-# Colors
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Check prerequisites
 echo "Checking prerequisites..."
 if ! command -v python3 &> /dev/null; then
     echo -e "${RED}Error: Python 3 is not installed${NC}"
     exit 1
 fi
-
 if ! command -v node &> /dev/null; then
     echo -e "${RED}Error: Node.js is not installed${NC}"
     exit 1
 fi
-
-if ! command -v docker &> /dev/null; then
-    echo -e "${YELLOW}Warning: Docker is not installed. You'll need to install PostgreSQL manually${NC}"
+if ! command -v ffmpeg &> /dev/null || ! command -v ffprobe &> /dev/null; then
+    echo -e "${YELLOW}Warning: ffmpeg/ffprobe not found — video-glue will not work without them.${NC}"
+    echo "  Install on Ubuntu: sudo apt install ffmpeg"
 fi
-
-echo -e "${GREEN}✓${NC} Prerequisites check passed"
+echo -e "${GREEN}\u2713${NC} Prerequisites checked"
 echo ""
 
-# Backend setup
+# Backend
 echo -e "${BLUE}Setting up backend...${NC}"
 cd backend
-
-# Create virtual environment
 if [ ! -d "venv" ]; then
-    echo "Creating virtual environment..."
     python3 -m venv venv
-    echo -e "${GREEN}✓${NC} Virtual environment created"
-else
-    echo -e "${YELLOW}⚠${NC} Virtual environment already exists"
+    echo -e "${GREEN}\u2713${NC} Virtual environment created"
 fi
-
-# Install dependencies
-echo "Installing Python dependencies..."
 ./venv/bin/pip install --upgrade pip -q
 ./venv/bin/pip install -r requirements-dev.txt -q
-echo -e "${GREEN}✓${NC} Python dependencies installed"
+echo -e "${GREEN}\u2713${NC} Python dependencies installed"
 
-# Create .env file
 if [ ! -f ".env" ]; then
-    echo "Creating .env file..."
     cat > .env << 'EOF'
-DATABASE_URL=postgresql://dbadmin:devpassword@localhost:5432/appdb
+# SQLite by default; point VIDEO_LIBRARY_DIR at your video folder.
 SECRET_KEY=dev-secret-key-change-in-production
+VIDEOGLUE_WORKER=1
 EOF
-    echo -e "${GREEN}✓${NC} .env file created"
-else
-    echo -e "${YELLOW}⚠${NC} .env file already exists"
+    echo -e "${GREEN}\u2713${NC} .env file created"
 fi
-
 cd ..
-echo ""
 
-# Frontend setup
+# Frontend
 echo -e "${BLUE}Setting up frontend...${NC}"
 cd frontend
-
-# Install dependencies
-echo "Installing Node.js dependencies..."
 npm install --silent
-echo -e "${GREEN}✓${NC} Node.js dependencies installed"
-
+echo -e "${GREEN}\u2713${NC} Node dependencies installed"
 cd ..
-echo ""
 
-# Git hooks setup
-echo -e "${BLUE}Setting up git hooks...${NC}"
-if [ -d ".git" ]; then
-    echo "Creating symlinks for git hooks..."
+# Git hooks
+if [ -d ".git" ] && [ -d "infrastructure/git-hooks" ]; then
     for hook in infrastructure/git-hooks/*; do
+        [ -f "$hook" ] || continue
         hook_name=$(basename "$hook")
         chmod +x "$hook"
         ln -sf "../../infrastructure/git-hooks/$hook_name" ".git/hooks/$hook_name"
     done
-    echo -e "${GREEN}✓${NC} Git hooks installed (symlinked)"
-else
-    echo -e "${YELLOW}⚠${NC} Not a git repository, skipping git hooks setup"
+    echo -e "${GREEN}\u2713${NC} Git hooks installed"
 fi
-echo ""
 
-# Docker setup
-if command -v docker &> /dev/null; then
-    echo -e "${BLUE}Setting up PostgreSQL database...${NC}"
-
-    # Handle --reset-db option
-    if [ "$RESET_DB" = true ]; then
-        if docker ps -a | grep -q template-fptb-db; then
-            echo "Removing existing database container..."
-            docker rm -f template-fptb-db
-            echo -e "${GREEN}✓${NC} Existing container removed"
-        fi
-    fi
-
-    # Check if container already exists
-    if docker ps -a | grep -q template-fptb-db; then
-        echo -e "${YELLOW}⚠${NC} Database container already exists"
-
-        # Check if it's running
-        if docker ps | grep -q template-fptb-db; then
-            echo -e "${GREEN}✓${NC} Database is running"
-        else
-            # Check if port 5432 is already in use before starting
-            if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q '0.0.0.0:5432\|:::5432'; then
-                CONFLICTING_CONTAINER=$(docker ps --format '{{.Names}}\t{{.Ports}}' | grep '0.0.0.0:5432\|:::5432' | awk '{print $1}')
-                echo -e "${RED}✗${NC} Port 5432 is already in use by container: ${YELLOW}${CONFLICTING_CONTAINER}${NC}"
-                echo ""
-                echo "The setup needs port 5432 for the PostgreSQL database."
-                echo -e "Would you like to stop and remove ${YELLOW}${CONFLICTING_CONTAINER}${NC}? [y/N]"
-                read -r response
-
-                if [[ "$response" =~ ^[Yy]$ ]]; then
-                    echo "Stopping and removing ${CONFLICTING_CONTAINER}..."
-                    docker stop "$CONFLICTING_CONTAINER"
-                    docker rm "$CONFLICTING_CONTAINER"
-                    echo -e "${GREEN}✓${NC} Container removed"
-                    echo ""
-                else
-                    echo -e "${YELLOW}⚠${NC} Setup cancelled. Please free port 5432 manually and run setup again."
-                    echo "  You can:"
-                    echo "    - Stop the container: docker stop ${CONFLICTING_CONTAINER}"
-                    echo "    - Remove the container: docker rm ${CONFLICTING_CONTAINER}"
-                    echo "    - Or modify setup.sh to use a different port"
-                    exit 1
-                fi
-            fi
-
-            echo "Starting existing database container..."
-            docker start template-fptb-db
-            echo -e "${GREEN}✓${NC} Database started"
-        fi
-    else
-        # Check if port 5432 is already in use
-        if docker ps --format '{{.Names}}\t{{.Ports}}' | grep -q '0.0.0.0:5432\|:::5432'; then
-            CONFLICTING_CONTAINER=$(docker ps --format '{{.Names}}\t{{.Ports}}' | grep '0.0.0.0:5432\|:::5432' | awk '{print $1}')
-            echo -e "${RED}✗${NC} Port 5432 is already in use by container: ${YELLOW}${CONFLICTING_CONTAINER}${NC}"
-            echo ""
-            echo "The setup needs port 5432 for the PostgreSQL database."
-            echo -e "Would you like to stop and remove ${YELLOW}${CONFLICTING_CONTAINER}${NC}? [y/N]"
-            read -r response
-
-            if [[ "$response" =~ ^[Yy]$ ]]; then
-                echo "Stopping and removing ${CONFLICTING_CONTAINER}..."
-                docker stop "$CONFLICTING_CONTAINER"
-                docker rm "$CONFLICTING_CONTAINER"
-                echo -e "${GREEN}✓${NC} Container removed"
-                echo ""
-            else
-                echo -e "${YELLOW}⚠${NC} Setup cancelled. Please free port 5432 manually and run setup again."
-                echo "  You can:"
-                echo "    - Stop the container: docker stop ${CONFLICTING_CONTAINER}"
-                echo "    - Remove the container: docker rm ${CONFLICTING_CONTAINER}"
-                echo "    - Or modify setup.sh to use a different port"
-                exit 1
-            fi
-        fi
-
-        echo "Creating and starting PostgreSQL container..."
-        docker run --name template-fptb-db \
-            -e POSTGRES_PASSWORD=devpassword \
-            -e POSTGRES_USER=dbadmin \
-            -e POSTGRES_DB=appdb \
-            -p 5432:5432 \
-            -d postgres:15
-
-        echo "Waiting for database to be ready..."
-        sleep 3
-        echo -e "${GREEN}✓${NC} Database is running"
-    fi
-else
-    echo -e "${YELLOW}⚠${NC} Docker not available. Please install PostgreSQL manually:"
-    echo "  https://www.postgresql.org/download/"
-fi
-echo ""
-
-# Summary
-echo "================================"
-echo "Setup Complete!"
-echo "================================"
-echo ""
-echo -e "${GREEN}Backend setup:${NC}"
-echo "  - Virtual environment created"
-echo "  - Dependencies installed"
-echo "  - .env file created"
-echo ""
-echo -e "${GREEN}Frontend setup:${NC}"
-echo "  - Dependencies installed"
-echo ""
-echo -e "${GREEN}Git hooks setup:${NC}"
-if [ -d ".git" ]; then
-    echo "  - Pre-commit hooks installed"
-else
-    echo "  - Skipped (not a git repository)"
-fi
-echo ""
-echo -e "${GREEN}Database setup:${NC}"
-if command -v docker &> /dev/null && docker ps | grep -q template-fptb-db; then
-    echo "  - PostgreSQL container running on port 5432"
-else
-    echo "  - Please set up PostgreSQL manually"
-fi
 echo ""
 echo "Next steps:"
-echo ""
-echo "1. Start the backend:"
-echo "   cd backend"
-echo "   source venv/bin/activate  # Windows: venv\\Scripts\\activate"
-echo "   python app.py"
-echo ""
-echo "2. Start the frontend (in a new terminal):"
-echo "   cd frontend"
-echo "   npm run dev"
-echo ""
-echo "3. Open your browser to:"
-echo -e "   ${BLUE}http://localhost:3000${NC}"
-echo ""
-echo "4. Create an account and start using the application!"
-echo ""
+echo "  1. ./start_backend.sh"
+echo "  2. ./start_frontend.sh"
+echo "  3. Open http://localhost:3000"

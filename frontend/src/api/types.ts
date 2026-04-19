@@ -1,5 +1,5 @@
 /**
- * TypeScript types for API communication
+ * API types shared with the backend.
  */
 
 export interface User {
@@ -9,24 +9,97 @@ export interface User {
   created_at: string;
 }
 
-export interface Todo {
+export type VideoStatus =
+  | "discovered"
+  | "probing"
+  | "probed"
+  | "scanning"
+  | "thumbnailing"
+  | "ready"
+  | "error";
+
+export interface Video {
   id: number;
-  title: string;
-  description: string | null;
-  owner: User | null;
-  status: "pending" | "in_progress" | "completed";
-  importance: number; // 1=Low, 2=Medium, 3=High, 4=Critical
-  urgency: number; // 1=Low, 2=Medium, 3=High, 4=Critical
-  importance_label: string;
-  urgency_label: string;
-  importance_icon: string;
-  urgency_icon: string;
-  priority_score: number;
-  created_at: string;
+  path: string;
+  filename: string;
+  size_bytes: number;
+  date_modified: string;
+  duration_seconds: number | null;
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  total_frames: number | null;
+  container: string | null;
+  status: VideoStatus;
+  scan_progress_percent: number;
+  scan_started_at: string | null;
+  error_message: string | null;
+  discovered_at: string;
   updated_at: string;
+  segment_count?: number;
 }
 
-// Request types
+export interface Segment {
+  id: number;
+  video_id: number;
+  scanner_name: string;
+  start_frame: number;
+  end_frame: number;
+  frame_count: number;
+  start_pts_seconds: number;
+  end_pts_seconds: number;
+  duration_seconds: number;
+  thumbnail_path: string | null;
+  meta: Record<string, unknown>;
+}
+
+export interface ScannerInfo {
+  name: string;
+  version: string;
+  default_config: Record<string, unknown>;
+}
+
+export interface Clip {
+  id: number;
+  composition_id: number;
+  segment_id: number;
+  position: number;
+  trim_start_frame: number;
+  trim_end_frame: number;
+  segment: Segment | null;
+}
+
+export interface Composition {
+  id: number;
+  name: string;
+  owner_id: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  clips?: Clip[];
+}
+
+export interface ClipInput {
+  segment_id: number;
+  trim_start_frame: number;
+  trim_end_frame: number;
+}
+
+export type ExportFormat = "mp4" | "webm" | "gif";
+export type ExportStatus = "queued" | "running" | "done" | "error";
+
+export interface ExportJob {
+  id: number;
+  composition_id: number;
+  format: ExportFormat;
+  status: ExportStatus;
+  progress_percent: number;
+  error_message: string | null;
+  created_at: string;
+  finished_at: string | null;
+  download_available: boolean;
+}
+
 export interface RegisterRequest {
   email: string;
   username: string;
@@ -41,22 +114,6 @@ export interface LoginRequest {
 export interface AuthResponse {
   token: string;
   user: User;
-}
-
-export interface TodoCreateRequest {
-  title: string;
-  description?: string;
-  importance?: number; // 1=Low, 2=Medium, 3=High, 4=Critical
-  urgency?: number; // 1=Low, 2=Medium, 3=High, 4=Critical
-  status?: "pending" | "in_progress" | "completed";
-}
-
-export interface TodoUpdateRequest {
-  title?: string;
-  description?: string;
-  importance?: number; // 1=Low, 2=Medium, 3=High, 4=Critical
-  urgency?: number; // 1=Low, 2=Medium, 3=High, 4=Critical
-  status?: "pending" | "in_progress" | "completed";
 }
 
 export interface ApiError {

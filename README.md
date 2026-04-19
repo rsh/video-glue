@@ -5,266 +5,182 @@ This entire repository was created using AI, except this section and anything in
 Proceed at your own risk!
 
 
-# Web Application Template
+# video-glue
 
-A production-ready [rsh: AI's claim, not mine] full-stack web application template with **Flask (Python) backend** and **TypeScript frontend**, featuring authentication, database models, and CRUD operations.
+Local webapp that scans a directory of video files, detects hard-cut scene transitions (frame-accurate), and lets you assemble short clips on a single-track drag-and-drop timeline. Export to mp4, webm, or gif via ffmpeg.
 
-## 🚀 Quick Start
+The scanner model is pluggable: today there's `hard_cut`; adding e.g. `funny_scene` later is a one-file drop-in under `backend/scanners/`.
+
+See `docs/planning/architectural-design.md` for the full design.
+
+## Prerequisites
+
+- **Python 3** (tested on 3.12)
+- **Node.js** (for the frontend bundler)
+- **ffmpeg + ffprobe** on `PATH` — video-glue shells out to both for probing, thumbnails, and export. On Ubuntu: `sudo apt install ffmpeg`.
+
+No Docker, no Postgres, no Redis required. Data lives in SQLite.
+
+## Setup
 
 ```bash
-# Run the setup script - it handles everything!
 ./setup.sh
-
-# Start the backend (in one terminal)
-cd backend
-source venv/bin/activate  # Windows: venv\Scripts\activate
-python app.py
-
-# Start the frontend (in another terminal)
-cd frontend
-npm run dev
-
-# Open your browser to http://localhost:3000
 ```
 
-## 📁 Project Structure
+Creates `backend/venv/`, installs Python + npm deps, and writes `backend/.env` with a dev secret and `VIDEOGLUE_WORKER=1`.
 
-```
-.
-├── backend/                 # Flask API server
-│   ├── models.py           # SQLAlchemy database models
-│   ├── api.py              # API routes and endpoints
-│   ├── auth.py             # JWT authentication utilities
-│   ├── schemas.py          # Pydantic validation schemas
-│   ├── app.py              # Application entry point
-│   ├── reset_db.py         # Database reset utility
-│   └── tests/              # Backend tests
-├── frontend/               # TypeScript + Bootstrap frontend
-│   └── src/
-│       ├── index.ts        # Main application logic
-│       ├── components.ts   # Reusable UI components
-│       ├── auth.ts         # Authentication state
-│       └── api/            # API client library
-│           ├── client.ts   # Type-safe API client
-│           └── types.ts    # TypeScript interfaces
-├── infrastructure/         # Terraform deployment configs
-├── docs/                   # Documentation
-├── setup.sh               # One-command setup script
-└── check.sh               # Run all tests and checks
-```
+## Configuration
 
-## 🏗️ Architecture Overview
+All config is env-driven (see `backend/config.py`). Defaults:
 
-### Backend (Flask + PostgreSQL)
+| Variable | Default | Purpose |
+|---|---|---|
+| `VIDEO_LIBRARY_DIR` | `./data/library/` | Where you drop videos for video-glue to discover. |
+| `VIDEOGLUE_DATA_DIR` | `./data/` | Root for everything else (db, thumbnails, exports). Override to move it all at once. |
+| `VIDEOGLUE_THUMBNAIL_DIR` | `<data>/thumbnails/` | Per-segment first-frame JPEGs. |
+| `VIDEOGLUE_EXPORT_DIR` | `<data>/exports/` | Rendered composition output files. |
+| `DATABASE_URL` | `sqlite:///<data>/video-glue.db` | Any SQLAlchemy URL. |
+| `VIDEOGLUE_WORKER` | unset → off | Must be `1` for background probing/scanning/exports to run. `setup.sh` enables it. |
+| `VIDEOGLUE_WORKER_POLL_SECONDS` | `2.0` | How often the worker thread checks for pending work. |
+| `SECRET_KEY` | `dev-secret-key` | JWT signing key. Set a real one in production. |
+| `FFMPEG_BIN` / `FFPROBE_BIN` | `ffmpeg` / `ffprobe` | Override if they're not on `PATH`. |
 
-- **Flask** web framework with **SQLAlchemy** ORM
-- **JWT authentication** with secure password hashing
-- **Pydantic** for request/response validation
-- **PostgreSQL** database with Docker support
-- Full test coverage with **pytest**
+Point `VIDEO_LIBRARY_DIR` at a folder of your own videos, or drop files into the default. Extensions picked up: `.mp4 .mov .mkv .webm .avi .m4v`.
 
-### Frontend (TypeScript + Bootstrap)
+## Running
 
-- **TypeScript** for type safety
-- **Bootstrap 5** for responsive UI
-- **Webpack** for bundling and dev server
-- **Jest** for testing
-- Type-safe API client with full backend integration
-
-### Database Models
-
-The template includes 3 example models demonstrating common patterns:
-
-1. **User** - Authentication and user management
-   - Email, username, password (hashed)
-   - JWT token generation
-   - Relationships to user-owned entities
-
-2. **Category** - Simple lookup table pattern
-   - Demonstrates one-to-many relationships
-   - Shared across multiple users
-
-3. **Item** - Main domain entity pattern
-   - User ownership
-   - Foreign key relationships
-   - Status field (enum-style)
-   - Full CRUD operations
-
-## 🎯 Key Features
-
-### Authentication & Authorization
-- User registration and login
-- JWT-based authentication
-- Protected API endpoints
-- Session management
-
-### CRUD Operations
-- Create, read, update, delete for Items
-- Category management
-- User profile access
-- Proper error handling
-
-### Type Safety
-- Backend: Pydantic schemas for validation
-- Frontend: TypeScript interfaces
-- End-to-end type checking
-
-### Testing
-- Backend: pytest with fixtures
-- Frontend: Jest with Testing Library
-- Run all tests: `./check.sh`
-
-## 📝 Customizing for Your Project
-
-### 1. Define Your Domain Models
-
-Edit `backend/models.py` to create your own models. The template provides:
-- `User` - Keep this for authentication
-- `Category` - Example lookup table (customize or remove)
-- `Item` - Example entity (customize to your needs)
-
-### 2. Update API Endpoints
-
-Edit `backend/api.py` to add/modify endpoints:
-
-```python
-@app.route("/api/your-resource", methods=["POST"])
-@login_required
-def create_resource(current_user: User) -> tuple[dict, int]:
-    # Your logic here
-    return {"resource": resource.to_dict()}, 201
-```
-
-### 3. Add Validation Schemas
-
-Edit `backend/schemas.py` for request validation:
-
-```python
-class YourResourceCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=100)
-    # Add your fields
-```
-
-### 4. Update Frontend Types
-
-Edit `frontend/src/api/types.ts`:
-
-```typescript
-export interface YourResource {
-  id: number;
-  name: string;
-  // Add your fields
-}
-```
-
-### 5. Add API Client Methods
-
-Edit `frontend/src/api/client.ts`:
-
-```typescript
-public async createYourResource(data: YourResourceCreate): Promise<YourResource> {
-  return this.request("/api/your-resource", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-}
-```
-
-### 6. Build UI Components
-
-Edit `frontend/src/components.ts` to create forms and views for your resources.
-
-## 🧪 Development Workflow
-
-### Running Tests
+Two terminals:
 
 ```bash
-# Backend tests
-cd backend
-source venv/bin/activate
-pytest
+# Terminal 1: backend (Flask on :5000)
+./start_backend.sh
 
-# Frontend tests
-cd frontend
-npm test
-
-# Run all checks (tests, linting, type-checking)
-./check.sh
+# Terminal 2: frontend (webpack dev server on :3000, proxies /api to :5000)
+./start_frontend.sh
 ```
 
-### Database Management
+Then open <http://localhost:3000>.
 
-```bash
-# Reset database (WARNING: deletes all data)
-cd backend
-source venv/bin/activate
-python reset_db.py
-```
+## Usage flow
 
-### Code Quality
+1. Register an account (first visit).
+2. Drop some video files into `VIDEO_LIBRARY_DIR`.
+3. Click **Rescan library**. Videos appear immediately with status `discovered`.
+4. The background worker probes each file (`ffprobe`) → runs the `hard_cut` scanner (PySceneDetect) → extracts a first-frame JPEG thumbnail per segment. The UI polls every 2 s and updates each video's status (`probing` → `scanning` → `ready`).
+5. Expand a video to see its segment tiles. Drag tiles down to the timeline.
+6. Click a clip to select it; drag its edge handles or use the numeric `trim_start_frame`/`trim_end_frame` inputs for frame-exact trimming. Re-order by dragging clips within the track.
+7. Name your composition in the side panel and **Save**.
+8. Click **MP4**, **WebM**, or **GIF** to export. Progress polls at 1.5 s; when it's done, a Download button appears.
+
+Preview is approximate (browser `<video>` seek is not frame-exact). Exports are frame-exact (`ffmpeg trim=start_frame=…:end_frame=…`). Audio is stripped in v1.
+
+## Dev cycle
 
 ```bash
 # Backend
 cd backend
-mypy .                    # Type checking
-black .                   # Format code
-flake8                    # Linting
+source venv/bin/activate
+pytest                              # tests (add your own under tests/)
+flake8 --max-line-length=120 .      # lint
+mypy .                              # type-check
+python reset_db.py                  # nuke + recreate schema (WIPES DATA)
 
 # Frontend
 cd frontend
-npm run lint              # ESLint
-npm run format            # Prettier
-npm run type-check        # TypeScript
+npm run type-check                  # tsc --noEmit
+npm run lint                        # eslint
+npm run lint:fix                    # eslint --fix (runs prettier too)
+npm run build                       # production bundle
+npm test                            # jest
+
+# Both
+./check.sh                          # runs everything in sequence
 ```
 
-## 🔒 Security Notes
+### Database migrations (Alembic)
 
-- Change `SECRET_KEY` in production (use environment variable)
-- Use HTTPS in production
-- Update CORS settings in `api.py` for production
-- Never commit `.env` files
-- Use strong passwords (min 8 chars enforced)
+Schema lives in `backend/models.py`. For quick iteration, `reset_db.py` (or `db.create_all()` on first boot) is enough. Once you have real saved compositions, generate migrations instead:
 
-## 🌐 Deployment
-
-The template includes Terraform configurations in `infrastructure/` for deploying to cloud providers.
-
-### Environment Variables
-
-Create `.env` file in backend:
 ```bash
-DATABASE_URL=postgresql://user:pass@localhost:5432/dbname
-SECRET_KEY=your-secret-key-here
+cd backend
+source venv/bin/activate
+alembic revision --autogenerate -m "describe change"
+alembic upgrade head
 ```
 
-## 📚 API Documentation
+### Adding a new scanner
 
-### Authentication
+1. Create `backend/scanners/your_scanner.py`. Implement a class with `name`, `version`, `default_config`, and `scan(video, config) -> Iterable[ScannerSegment]`.
+2. Register it in `backend/scanners/__init__.py` alongside `HardCutScanner`.
+3. It shows up under `GET /api/scanners` automatically; segments it produces coexist with `hard_cut`'s.
 
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login
-- `GET /api/auth/me` - Get current user (requires auth)
+## Project structure
 
-### Categories
+```
+backend/
+  app.py                     # entry point — db.create_all, start worker, Flask dev server
+  api.py                     # auth endpoints + WAL/FK SQLite pragmas + blueprint registration
+  auth.py                    # JWT (accepts both Authorization header and ?token= query)
+  config.py                  # env-driven config + ensure_dirs()
+  models.py                  # User, Video, Scanner, ScanRun, Segment, Composition,
+                             #   CompositionClip, ExportJob
+  schemas.py                 # Pydantic request schemas
+  probe.py                   # ffprobe wrapper → metadata (rational fps, total_frames)
+  thumbnails.py              # ffmpeg first-frame extraction per segment
+  export.py                  # filter_complex builder + subprocess runner + -progress parser
+  naming.py                  # adjective-noun-NN composition name generator
+  worker.py                  # background thread: probe → scan → thumbnails → exports
+  scanners/
+    base.py                  # Scanner protocol + dataclasses
+    __init__.py              # registry
+    hard_cut.py              # PySceneDetect-backed ContentDetector
+  routes/                    # Flask blueprints
+    library.py  videos.py  segments.py  scanners.py  compositions.py  exports.py
+  migrations/                # Alembic
+  reset_db.py                # drop_all + create_all
 
-- `GET /api/categories` - List all categories
-- `POST /api/categories` - Create category (requires auth)
+frontend/src/
+  index.html, index.ts       # main entry — auth gate + editor view
+  styles.css                 # editor layout + timeline/clip styles
+  auth.ts                    # current-user state
+  api/
+    client.ts                # ApiClient: auth, library, videos, segments, compositions, exports
+    types.ts                 # shared types
+  components/
+    auth-forms.ts            # login / register forms
+    feedback.ts              # toasts + formatters + escapeHtml
+    drag.ts                  # HTML5 DnD MIME types + helpers
+    video-grid.ts            # top pane: videos + segment thumbnail tiles
+    timeline.ts              # bottom pane: single-track timeline + trim handles
+    preview.ts               # composition preview (HTML5 <video>, clip-to-clip seeking)
+    composition-panel.ts     # side panel: name, load/save, export
 
-### Items
+docs/
+  ARCHITECTURE.md            # original template architecture (kept for reference)
+  planning/
+    architectural-design.md  # video-glue-specific design
+```
 
-- `GET /api/items` - List user's items (requires auth)
-- `GET /api/items/:id` - Get item details (requires auth)
-- `POST /api/items` - Create item (requires auth)
-- `PATCH /api/items/:id` - Update item (requires auth)
-- `DELETE /api/items/:id` - Delete item (requires auth)
+## Troubleshooting
 
-## 🤝 Contributing
+- **Nothing happens after Rescan** — the worker is gated by `VIDEOGLUE_WORKER=1`. Confirm it's set (`./start_backend.sh` loads `.env` automatically; manual `python app.py` invocations don't).
+- **Video stuck on `error` with a probe message** — usually means ffmpeg/ffprobe aren't on `PATH`. Check with `which ffmpeg ffprobe`.
+- **Scan finishes but there are no segments** — the scanner ran but the probe data was bogus (often variable-frame-rate video). Re-encode to CFR, or flag it as an issue to file (see the VFR note in `docs/planning/architectural-design.md`).
+- **Preview skips at clip boundaries** — expected; `<video>` seek is not frame-exact. The export is.
+- **Export fails with "ffmpeg exited…"** — check the full `error_message` on the export job; most often a codec that isn't installed with your ffmpeg build (e.g. libvpx-vp9 for webm).
 
-This is a template - customize it for your needs! The structure is designed to be:
-- **Easy to understand** - Clear separation of concerns
-- **Easy to extend** - Add new models and endpoints
-- **Production-ready** - Includes testing, linting, deployment
+## API at a glance
 
-## 📄 License
+Everything under `/api/*` except `/api/auth/*` requires a JWT (Authorization header or `?token=` query).
+
+- `POST /api/auth/register` · `POST /api/auth/login` · `GET /api/auth/me`
+- `POST /api/library/rescan`
+- `GET /api/videos` · `GET /api/videos/:id` · `GET /api/videos/:id/segments` · `GET /api/videos/:id/stream` · `POST /api/videos/:id/scan`
+- `GET /api/thumbnails/<video_id>/<segment_id>.jpg`
+- `GET /api/scanners`
+- `GET /api/compositions` · `POST /api/compositions` · `GET|PATCH|DELETE /api/compositions/:id` · `PUT /api/compositions/:id/clips`
+- `POST /api/compositions/:id/export` · `GET /api/exports/:id` · `GET /api/exports/:id/download`
+
+## License
 
 ISC
