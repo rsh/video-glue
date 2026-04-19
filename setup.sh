@@ -27,7 +27,7 @@ if ! command -v ffmpeg &> /dev/null || ! command -v ffprobe &> /dev/null; then
     echo -e "${YELLOW}Warning: ffmpeg/ffprobe not found — video-glue will not work without them.${NC}"
     echo "  Install on Ubuntu: sudo apt install ffmpeg"
 fi
-echo -e "${GREEN}\u2713${NC} Prerequisites checked"
+echo -e "${GREEN}✓${NC} Prerequisites checked"
 echo ""
 
 # Backend
@@ -35,11 +35,11 @@ echo -e "${BLUE}Setting up backend...${NC}"
 cd backend
 if [ ! -d "venv" ]; then
     python3 -m venv venv
-    echo -e "${GREEN}\u2713${NC} Virtual environment created"
+    echo -e "${GREEN}✓${NC} Virtual environment created"
 fi
 ./venv/bin/pip install --upgrade pip -q
 ./venv/bin/pip install -r requirements-dev.txt -q
-echo -e "${GREEN}\u2713${NC} Python dependencies installed"
+echo -e "${GREEN}✓${NC} Python dependencies installed"
 
 if [ ! -f ".env" ]; then
     cat > .env << 'EOF'
@@ -47,7 +47,7 @@ if [ ! -f ".env" ]; then
 SECRET_KEY=dev-secret-key-change-in-production
 VIDEOGLUE_WORKER=1
 EOF
-    echo -e "${GREEN}\u2713${NC} .env file created"
+    echo -e "${GREEN}✓${NC} .env file created"
 fi
 cd ..
 
@@ -55,7 +55,7 @@ cd ..
 echo -e "${BLUE}Setting up frontend...${NC}"
 cd frontend
 npm install --silent
-echo -e "${GREEN}\u2713${NC} Node dependencies installed"
+echo -e "${GREEN}✓${NC} Node dependencies installed"
 cd ..
 
 # Git hooks
@@ -66,7 +66,7 @@ if [ -d ".git" ] && [ -d "infrastructure/git-hooks" ]; then
         chmod +x "$hook"
         ln -sf "../../infrastructure/git-hooks/$hook_name" ".git/hooks/$hook_name"
     done
-    echo -e "${GREEN}\u2713${NC} Git hooks installed"
+    echo -e "${GREEN}✓${NC} Git hooks installed"
 fi
 
 echo ""

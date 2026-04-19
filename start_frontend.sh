@@ -12,5 +12,5 @@ fi
 
 # Start webpack dev server
 cd frontend
-echo "Starting webpack dev server on http://localhost:8080"
+echo "Starting webpack dev server on http://localhost:3000"
 npm run dev

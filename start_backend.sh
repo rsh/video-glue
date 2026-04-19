@@ -12,9 +12,6 @@ fi
 cd backend
 source venv/bin/activate
 
-export FLASK_APP=app.py
-export FLASK_ENV=development
-
 if [ -f ".env" ]; then
     echo "Loading environment from .env file..."
     set -a
@@ -27,8 +24,6 @@ else
     echo "Generated new SECRET_KEY for this session"
 fi
 
-echo "Initializing database..."
-python -c "from app import app; from models import db; app.app_context().push(); db.create_all()" 2>/dev/null || true
-
 echo "Starting Flask on http://localhost:5000"
+# app.py handles db.create_all() and worker startup in __main__.
 python app.py
