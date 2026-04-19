@@ -68,6 +68,7 @@ class Video(db.Model):  # type: ignore[name-defined,misc]
     fps_den = db.Column(db.Integer, nullable=True)
     total_frames = db.Column(db.Integer, nullable=True)
     container = db.Column(db.String(32), nullable=True)
+    codec = db.Column(db.String(32), nullable=True)
     status = db.Column(db.String(32), nullable=False, default="discovered", index=True)
     scan_progress_percent = db.Column(db.Float, nullable=False, default=0.0)
     scan_started_at = db.Column(db.DateTime, nullable=True)
@@ -109,6 +110,7 @@ class Video(db.Model):  # type: ignore[name-defined,misc]
             "fps": self.fps,
             "total_frames": self.total_frames,
             "container": self.container,
+            "codec": self.codec,
             "status": self.status,
             "scan_progress_percent": self.scan_progress_percent,
             "scan_started_at": (
