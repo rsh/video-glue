@@ -29,9 +29,10 @@ def search(current_user: User) -> tuple[dict, int]:
     language = request.args.get("language", "en")
 
     # FTS5 MATCH + snippet. snippet(table, col_index, open, close, ellipsis, tokens)
-    rows = db.session.execute(
-        text(
-            """
+    rows = (
+        db.session.execute(
+            text(
+                """
             SELECT
                 c.id AS cue_id,
                 c.video_id AS video_id,
@@ -48,9 +49,12 @@ def search(current_user: User) -> tuple[dict, int]:
             ORDER BY rank
             LIMIT :limit
             """
-        ),
-        {"q": q, "lang": language, "limit": limit},
-    ).mappings().all()
+            ),
+            {"q": q, "lang": language, "limit": limit},
+        )
+        .mappings()
+        .all()
+    )
 
     if not rows:
         return {"results": []}, 200
@@ -66,13 +70,10 @@ def search(current_user: User) -> tuple[dict, int]:
     if wanted:
         track_ids = list({t for t, _ in wanted})
         ords = list({o for _, o in wanted})
-        neighbors = (
-            SubtitleCue.query.filter(
-                SubtitleCue.track_id.in_(track_ids),
-                SubtitleCue.ordinal.in_(ords),
-            )
-            .all()
-        )
+        neighbors = SubtitleCue.query.filter(
+            SubtitleCue.track_id.in_(track_ids),
+            SubtitleCue.ordinal.in_(ords),
+        ).all()
         for n in neighbors:
             neighbor_map[(n.track_id, n.ordinal)] = n.text
 

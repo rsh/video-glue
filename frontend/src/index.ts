@@ -552,15 +552,16 @@ function startVideoPolling(): void {
       if (grew) {
         // No-op: grid already re-renders above.
       }
-      const anyActive = state.videos.some((v) =>
-        [
-          "discovered",
-          "probing",
-          "probed",
-          "scanning",
-          "thumbnailing",
-          "subtitles_importing",
-        ].includes(v.status)
+      const anyActive = state.videos.some(
+        (v) =>
+          [
+            "discovered",
+            "probing",
+            "probed",
+            "scanning",
+            "thumbnailing",
+            "subtitles_importing",
+          ].includes(v.status) || v.preview_proxy_status === "building"
       );
       if (!anyActive) stopVideoPolling();
     } catch (err) {

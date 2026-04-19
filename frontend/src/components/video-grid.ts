@@ -91,6 +91,22 @@ function renderVideoRow(video: Video, props: VideoGridProps): HTMLElement {
     row.appendChild(err);
   }
 
+  if (video.preview_proxy_status === "building") {
+    const row2 = document.createElement("div");
+    row2.className = "vg-proxy-status text-muted small";
+    const elapsed = elapsedSince(video.preview_proxy_started_at);
+    row2.innerHTML = `
+      <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+      Building browser-playable preview${elapsed ? ` · ${elapsed} elapsed` : ""}
+    `;
+    row.appendChild(row2);
+  } else if (video.preview_proxy_status === "error") {
+    const row2 = document.createElement("div");
+    row2.className = "vg-proxy-status text-danger small";
+    row2.textContent = `Preview transcode failed: ${video.preview_proxy_error_message ?? "unknown"}`;
+    row.appendChild(row2);
+  }
+
   if (isExpanded) {
     const segments = (props.segmentsByVideo.get(video.id) ?? []).filter(
       (s) => props.scannerFilter === "all" || s.scanner_name === props.scannerFilter
@@ -137,6 +153,14 @@ function renderSegmentTile(seg: Segment): HTMLElement {
 
   tile.addEventListener("dragstart", (e) => setSegmentDragData(e, seg.id));
   return tile;
+}
+
+function elapsedSince(iso: string | null): string {
+  if (!iso) return "";
+  const started = Date.parse(iso);
+  if (!Number.isFinite(started)) return "";
+  const ms = Math.max(0, Date.now() - started);
+  return formatRemaining(ms);
 }
 
 function estimateScanEta(video: Video): string {

@@ -75,6 +75,13 @@ class Video(db.Model):  # type: ignore[name-defined,misc]
     status = db.Column(db.String(32), nullable=False, default="discovered", index=True)
     scan_progress_percent = db.Column(db.Float, nullable=False, default=0.0)
     scan_started_at = db.Column(db.DateTime, nullable=True)
+    # Preview-proxy lifecycle for sources the browser can't play natively
+    # (e.g. AVI/mpeg4). Values: none | building | ready | error.
+    preview_proxy_status = db.Column(
+        db.String(16), nullable=False, default="none", index=True
+    )
+    preview_proxy_started_at = db.Column(db.DateTime, nullable=True)
+    preview_proxy_error_message = db.Column(db.Text, nullable=True)
     error_message = db.Column(db.Text, nullable=True)
     discovered_at = db.Column(db.DateTime, nullable=False, default=_utcnow)
     updated_at = db.Column(
@@ -119,6 +126,13 @@ class Video(db.Model):  # type: ignore[name-defined,misc]
             "scan_started_at": (
                 self.scan_started_at.isoformat() if self.scan_started_at else None
             ),
+            "preview_proxy_status": self.preview_proxy_status,
+            "preview_proxy_started_at": (
+                self.preview_proxy_started_at.isoformat()
+                if self.preview_proxy_started_at
+                else None
+            ),
+            "preview_proxy_error_message": self.preview_proxy_error_message,
             "error_message": self.error_message,
             "discovered_at": self.discovered_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
@@ -508,6 +522,4 @@ def _after_subtitle_cues_create(
         connection.exec_driver_sql(stmt.strip())
 
 
-event.listen(
-    SubtitleCue.__table__, "after_create", _after_subtitle_cues_create
-)
+event.listen(SubtitleCue.__table__, "after_create", _after_subtitle_cues_create)

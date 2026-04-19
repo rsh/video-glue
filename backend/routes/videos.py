@@ -1,7 +1,9 @@
 """Video routes: list, fetch, stream, segments."""
 from pathlib import Path
 
-from flask import Blueprint, Response, abort, send_file
+from typing import Any
+
+from flask import Blueprint, abort, jsonify, send_file
 from sqlalchemy import func
 
 import preview_cache
@@ -57,7 +59,7 @@ def list_segments(video_id: int, current_user: User) -> tuple[dict, int]:
 
 @videos_bp.route("/<int:video_id>/stream", methods=["GET"])
 @login_required
-def stream_video(video_id: int, current_user: User) -> Response:
+def stream_video(video_id: int, current_user: User) -> Any:
     video = db.session.get(Video, video_id)
     if video is None:
         abort(404)
@@ -66,6 +68,18 @@ def stream_video(video_id: int, current_user: User) -> Response:
         proxy = preview_cache.proxy_path(video_id)
         if proxy.exists():
             return send_file(proxy, conditional=True)
+        # Proxy required but not yet materialized — tell the caller, don't
+        # fall through to serving the unplayable original.
+        return (
+            jsonify(
+                {
+                    "error": "preview proxy not ready",
+                    "preview_proxy_status": video.preview_proxy_status,
+                    "preview_proxy_error_message": video.preview_proxy_error_message,
+                }
+            ),
+            409,
+        )
     if not path.exists():
         abort(404)
     return send_file(path, conditional=True)

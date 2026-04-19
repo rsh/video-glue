@@ -218,36 +218,52 @@ def _scan_one(video: Video, scanner_name: str = "hard_cut") -> None:
 
 
 def _find_video_needing_preview_proxy() -> Optional[Video]:
-    """Return the oldest ready video whose source needs a proxy that's missing."""
-    candidates = (
+    """Return the oldest ready video whose source needs a proxy that isn't yet
+    built or in progress. `error` is terminal — a failed proxy is not retried
+    automatically; users can clear it by resetting the status manually."""
+    return (
         Video.query.filter(
             Video.status == "ready",
             Video.container.isnot(None),
             Video.codec.isnot(None),
+            Video.preview_proxy_status == "none",
             db.or_(
                 Video.container.notin_(preview_cache.COMPATIBLE_CONTAINERS),
                 Video.codec.notin_(preview_cache.COMPATIBLE_CODECS),
             ),
         )
         .order_by(Video.discovered_at.asc())
-        .all()
+        .first()
     )
-    for v in candidates:
-        if not preview_cache.has_proxy(v.id):
-            return v
-    return None
 
 
 def _ensure_preview_proxy(video: Video) -> None:
     src = Path(video.path)
     if not src.exists():
+        video.preview_proxy_status = "error"
+        video.preview_proxy_error_message = f"source missing: {video.path}"
+        db.session.commit()
         return
+
+    video.preview_proxy_status = "building"
+    video.preview_proxy_started_at = _utcnow()
+    video.preview_proxy_error_message = None
+    db.session.commit()
+
     dest = preview_cache.proxy_path(video.id)
     logger.info("building preview proxy for video %s (%s)", video.id, video.path)
     try:
         preview_cache.generate(src, dest)
     except preview_cache.ProxyError as e:
         logger.warning("preview proxy failed for %s: %s", video.path, e)
+        video.preview_proxy_status = "error"
+        video.preview_proxy_error_message = str(e)
+        db.session.commit()
+        return
+
+    video.preview_proxy_status = "ready"
+    video.preview_proxy_error_message = None
+    db.session.commit()
 
 
 def _run_export(job: ExportJob) -> None:
@@ -387,6 +403,20 @@ def _loop(app) -> None:
             _stop_event.wait(config.WORKER_POLL_INTERVAL_SECONDS)
 
 
+def _reset_orphaned_statuses(app) -> None:
+    """Clear any `building` proxy statuses left over from a crashed backend
+    so the next tick picks them up again."""
+    with app.app_context():
+        orphans = Video.query.filter_by(preview_proxy_status="building").all()
+        if not orphans:
+            return
+        for v in orphans:
+            v.preview_proxy_status = "none"
+            v.preview_proxy_started_at = None
+        db.session.commit()
+        logger.info("reset %d orphaned preview_proxy='building' rows", len(orphans))
+
+
 def start(app) -> None:
     """Start the worker thread if not already running.
 
@@ -398,6 +428,7 @@ def start(app) -> None:
         return
     if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         return
+    _reset_orphaned_statuses(app)
     _stop_event.clear()
     _thread = threading.Thread(
         target=_loop, args=(app,), name="video-glue-worker", daemon=True

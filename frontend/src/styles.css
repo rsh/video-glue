@@ -250,6 +250,12 @@ body {
   padding: 0 0.75rem 0.5rem;
 }
 
+.vg-proxy-status {
+  padding: 0 0.75rem 0.5rem;
+  display: flex;
+  align-items: center;
+}
+
 .vg-scan-eta {
   margin-top: 2px;
   font-size: 0.7rem;

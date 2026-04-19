@@ -68,22 +68,80 @@ _ISO3_TO_ISO1 = {
 # Spanish/Italian/Portuguese/French ("a", "no", "si", "it", "me", …).
 ENGLISH_STOPWORDS = frozenset(
     [
-        "the", "and", "you", "that", "was", "for", "are", "with", "his",
-        "they", "this", "have", "from", "had", "not", "but", "what",
-        "all", "were", "when", "your", "can", "said", "there", "has",
-        "been", "would", "will", "does", "did", "her", "him", "she",
-        "them", "out", "just", "now", "here", "well", "because", "about",
-        "who", "why", "how", "some", "any", "than", "then", "one", "two",
-        "down", "over", "into", "only", "where", "their", "could",
-        "should", "these", "those", "which", "think", "know", "want",
-        "going", "gonna", "really", "yeah", "okay",
+        "the",
+        "and",
+        "you",
+        "that",
+        "was",
+        "for",
+        "are",
+        "with",
+        "his",
+        "they",
+        "this",
+        "have",
+        "from",
+        "had",
+        "not",
+        "but",
+        "what",
+        "all",
+        "were",
+        "when",
+        "your",
+        "can",
+        "said",
+        "there",
+        "has",
+        "been",
+        "would",
+        "will",
+        "does",
+        "did",
+        "her",
+        "him",
+        "she",
+        "them",
+        "out",
+        "just",
+        "now",
+        "here",
+        "well",
+        "because",
+        "about",
+        "who",
+        "why",
+        "how",
+        "some",
+        "any",
+        "than",
+        "then",
+        "one",
+        "two",
+        "down",
+        "over",
+        "into",
+        "only",
+        "where",
+        "their",
+        "could",
+        "should",
+        "these",
+        "those",
+        "which",
+        "think",
+        "know",
+        "want",
+        "going",
+        "gonna",
+        "really",
+        "yeah",
+        "okay",
     ]
 )
 
 # Strip common SRT/ASS inline formatting (`<i>…</i>`, `{\an8}`, curly tags).
-_MARKUP_RE = re.compile(
-    r"(?:\{\\[^}]*\}|</?[A-Za-z][^>]*>|\{[^}]*\})"
-)
+_MARKUP_RE = re.compile(r"(?:\{\\[^}]*\}|</?[A-Za-z][^>]*>|\{[^}]*\})")
 
 
 @dataclass
@@ -200,9 +258,7 @@ def extract_to_srt(video_path: Path, source: SubtitleSource) -> str:
 
 def _run_ffmpeg_capture(cmd: list) -> str:
     try:
-        completed = subprocess.run(
-            cmd, capture_output=True, check=True, timeout=120
-        )
+        completed = subprocess.run(cmd, capture_output=True, check=True, timeout=120)
     except FileNotFoundError as e:
         raise ExtractError(f"ffmpeg not found: {e}") from e
     except subprocess.CalledProcessError as e:
@@ -328,7 +384,10 @@ def import_subtitles(video: Video, probed_subtitle_streams: List[dict]) -> int:
         except ExtractError as e:
             logger.warning(
                 "subtitle extract failed (video=%s source=%s origin=%s): %s",
-                video.id, source.kind, source.origin, e,
+                video.id,
+                source.kind,
+                source.origin,
+                e,
             )
             continue
 
@@ -337,7 +396,9 @@ def import_subtitles(video: Video, probed_subtitle_streams: List[dict]) -> int:
         except Exception as e:  # noqa: BLE001 — third-party parser
             logger.warning(
                 "subtitle parse failed (video=%s source=%s): %s",
-                video.id, source.kind, e,
+                video.id,
+                source.kind,
+                e,
             )
             continue
         if not parsed:

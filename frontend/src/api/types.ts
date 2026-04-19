@@ -35,11 +35,16 @@ export interface Video {
   status: VideoStatus;
   scan_progress_percent: number;
   scan_started_at: string | null;
+  preview_proxy_status: PreviewProxyStatus;
+  preview_proxy_started_at: string | null;
+  preview_proxy_error_message: string | null;
   error_message: string | null;
   discovered_at: string;
   updated_at: string;
   segment_count?: number;
 }
+
+export type PreviewProxyStatus = "none" | "building" | "ready" | "error";
 
 export interface Segment {
   id: number;
