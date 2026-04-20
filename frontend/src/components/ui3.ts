@@ -1,28 +1,44 @@
 /**
- * UI 2 — three-section editor: video list + player (top),
- * segment viewer scrolling through the current playhead (middle),
- * composition timeline with drag-drop + yellow playhead (bottom).
+ * UI 3 — UI 2 plus an export dialog and a per-clip trim popover.
+ *
+ * Structural diff vs UI 2: export button in the bottom row, scissors button
+ * on each composition tile. Otherwise identical playback behavior.
  */
 
-import { apiClient, type Clip, type Segment, type Video } from "../api";
+import {
+  apiClient,
+  type Clip,
+  type Composition,
+  type Segment,
+  type Video,
+} from "../api";
 import { MIME_SEGMENT, readSegmentDragData, setSegmentDragData } from "./drag";
 import { formatDuration } from "./feedback";
+import { openTrimPopover, type TrimPopoverHandle } from "./trim-popover";
 
-export interface UI2Params {
+export interface UI3Params {
   videos: Video[];
   segmentsByVideo: Map<number, Segment[]>;
   clips: Clip[];
+  composition: Composition | null;
   onAddClip: (segmentId: number, insertIndex: number) => void;
   onRemoveClip: (index: number) => void;
+  onTrimClip: (index: number, trimStart: number, trimEnd: number) => void;
+  /** User clicked the export button. Caller decides when to pop the dialog
+   * (typically: save unsaved clips first so the backend sees them). */
+  onExport: () => void;
+  onRescanLibrary: () => void;
 }
 
-export interface UI2Handle {
+export interface UI3Handle {
   element: HTMLElement;
-  update: (params: UI2Params) => void;
+  update: (params: UI3Params) => void;
   /** Fast path: only the clips changed. Skips video list + segment lanes. */
   setClips: (clips: Clip[]) => void;
   /** Fast path: only videos/segments changed. Skips composition timeline. */
   setVideos: (videos: Video[], segmentsByVideo: Map<number, Segment[]>) => void;
+  /** Fast path: composition metadata changed. */
+  setComposition: (composition: Composition | null) => void;
 }
 
 type PlayMode = "idle" | "source" | "composition";
@@ -74,15 +90,33 @@ function scannerColor(name: string): string {
   return `hsl(${hue}, 65%, 55%)`;
 }
 
-export function createUI2(initial: UI2Params): UI2Handle {
-  let params: UI2Params = initial;
+export function createUI3(initial: UI3Params): UI3Handle {
+  let params: UI3Params = initial;
 
   // ---------- root layout ----------
   const root = document.createElement("div");
   root.className = "vg2-root";
   root.innerHTML = `
     <div class="vg2-top">
-      <div class="vg2-video-list"></div>
+      <div class="vg2-video-list vg3-video-list">
+        <div class="vg3-vl-toolbar">
+          <div class="vg3-vl-search-wrap">
+            <input type="search" class="form-control form-control-sm vg3-vl-search" placeholder="Filter videos…" />
+            <button type="button" class="vg3-vl-search-clear" title="Clear" aria-label="Clear search">×</button>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline-secondary vg3-vl-rescan" title="Rescan library">↻</button>
+        </div>
+        <div class="vg3-rescan-status" hidden>
+          <div class="vg3-rescan-row">
+            <span class="vg3-rescan-label">Processing…</span>
+            <span class="vg3-rescan-eta"></span>
+          </div>
+          <div class="progress vg3-rescan-progress">
+            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+          </div>
+        </div>
+        <div class="vg3-vl-rows"></div>
+      </div>
       <div class="vg2-player">
         <div class="vg2-player-frame">
           <video class="vg2-player-video" playsinline preload="auto"></video>
@@ -92,6 +126,8 @@ export function createUI2(initial: UI2Params): UI2Handle {
           <button type="button" class="btn btn-sm btn-outline-light vg2-player-play">▶</button>
           <span class="vg2-player-time">0:00 / 0:00</span>
           <input type="range" class="vg2-player-seek form-range" min="0" max="1000" value="0" step="1" />
+          <span class="vg3-player-volume-icon" title="Volume">🔊</span>
+          <input type="range" class="vg3-player-volume form-range" min="0" max="100" value="100" step="1" title="Volume" />
         </div>
       </div>
     </div>
@@ -103,7 +139,7 @@ export function createUI2(initial: UI2Params): UI2Handle {
         <div class="vg2-seg-empty">Select a video to see its segments here.</div>
       </div>
     </div>
-    <div class="vg2-bottom">
+    <div class="vg2-bottom vg3-bottom">
       <button type="button" class="vg2-comp-play" title="Play composition">▶</button>
       <div class="vg2-comp-track-wrap">
         <div class="vg2-comp-track">
@@ -112,21 +148,35 @@ export function createUI2(initial: UI2Params): UI2Handle {
         </div>
         <div class="vg2-comp-empty">Drag segments here to build a clip.</div>
       </div>
+      <button type="button" class="vg3-comp-export" title="Export composition">⬇</button>
     </div>
   `;
 
-  const videoListEl = root.querySelector<HTMLElement>(".vg2-video-list")!;
+  const videoListRowsEl = root.querySelector<HTMLElement>(".vg3-vl-rows")!;
+  const videoSearchEl = root.querySelector<HTMLInputElement>(".vg3-vl-search")!;
+  const videoSearchClearBtn =
+    root.querySelector<HTMLButtonElement>(".vg3-vl-search-clear")!;
+  const videoRescanBtn = root.querySelector<HTMLButtonElement>(".vg3-vl-rescan")!;
+  const rescanStatusEl = root.querySelector<HTMLElement>(".vg3-rescan-status")!;
+  const rescanLabelEl = root.querySelector<HTMLElement>(".vg3-rescan-label")!;
+  const rescanEtaEl = root.querySelector<HTMLElement>(".vg3-rescan-eta")!;
+  const rescanBarEl = root.querySelector<HTMLElement>(
+    ".vg3-rescan-progress .progress-bar"
+  )!;
   const playerVideoEl = root.querySelector<HTMLVideoElement>(".vg2-player-video")!;
   const playerEmptyEl = root.querySelector<HTMLElement>(".vg2-player-empty")!;
   const playBtn = root.querySelector<HTMLButtonElement>(".vg2-player-play")!;
   const timeLabel = root.querySelector<HTMLElement>(".vg2-player-time")!;
   const seekEl = root.querySelector<HTMLInputElement>(".vg2-player-seek")!;
+  const volumeEl = root.querySelector<HTMLInputElement>(".vg3-player-volume")!;
+  const volumeIconEl = root.querySelector<HTMLElement>(".vg3-player-volume-icon")!;
 
   const segPlayBtn = root.querySelector<HTMLButtonElement>(".vg2-seg-play")!;
   const segLanesEl = root.querySelector<HTMLElement>(".vg2-seg-lanes")!;
   const segEmptyEl = root.querySelector<HTMLElement>(".vg2-seg-empty")!;
 
   const compPlayBtn = root.querySelector<HTMLButtonElement>(".vg2-comp-play")!;
+  const compExportBtn = root.querySelector<HTMLButtonElement>(".vg3-comp-export")!;
   const compTrackWrap = root.querySelector<HTMLElement>(".vg2-comp-track-wrap")!;
   const compClipsEl = root.querySelector<HTMLElement>(".vg2-comp-clips")!;
   const compPlayheadEl = root.querySelector<HTMLElement>(".vg2-comp-playhead")!;
@@ -138,25 +188,33 @@ export function createUI2(initial: UI2Params): UI2Handle {
   let compClipIndex = 0;
   let rafId: number | null = null;
   let seeking = false;
+  let videoFilter = "";
+  // Wall-clock marker for computing rescan-style ETA. Set when we first see
+  // any active video; cleared when everything is ready.
+  let busyStartedAt: number | null = null;
 
   // ---------- render: video list ----------
   function renderVideoList(): void {
-    videoListEl.innerHTML = "";
-    if (params.videos.length === 0) {
+    videoListRowsEl.innerHTML = "";
+    const needle = videoFilter.trim().toLowerCase();
+    const matches = needle
+      ? params.videos.filter((v) => v.filename.toLowerCase().includes(needle))
+      : params.videos;
+    if (matches.length === 0) {
       const empty = document.createElement("div");
       empty.className = "vg2-vl-empty text-muted small p-2";
-      empty.textContent = "No videos in library.";
-      videoListEl.appendChild(empty);
+      empty.textContent =
+        params.videos.length === 0 ? "No videos in library." : "No matches.";
+      videoListRowsEl.appendChild(empty);
       return;
     }
-    for (const v of params.videos) {
+    for (const v of matches) {
       const row = document.createElement("button");
       row.type = "button";
+      row.disabled = !v.preview_ready;
       row.className =
         "vg2-vl-row text-start" + (v.id === selectedVideoId ? " active" : "");
-      const status = v.preview_ready
-        ? ""
-        : `<span class="badge bg-warning text-dark vg2-vl-badge">${v.preview_proxy_status}</span>`;
+      const status = v.preview_ready ? "" : renderProxyBadge(v.preview_proxy_status);
       row.innerHTML = `
         <div class="vg2-vl-name" title="${escapeAttr(v.filename)}">${escapeHtml(v.filename)}</div>
         <div class="vg2-vl-meta">
@@ -166,8 +224,71 @@ export function createUI2(initial: UI2Params): UI2Handle {
         </div>
       `;
       row.addEventListener("click", () => selectVideo(v.id));
-      videoListEl.appendChild(row);
+      videoListRowsEl.appendChild(row);
     }
+  }
+
+  // Sums scan + preview-proxy progress into a single 0-100 estimate per video.
+  function videoPercent(v: Video): number {
+    const scanDone =
+      v.status === "ready" ||
+      v.status === "thumbnailing" ||
+      v.status === "subtitles_importing";
+    const scanPct = scanDone
+      ? 100
+      : Math.max(0, Math.min(100, v.scan_progress_percent));
+    const proxyPct =
+      v.preview_proxy_status === "ready"
+        ? 100
+        : v.preview_proxy_status === "building"
+          ? Math.max(0, Math.min(100, v.preview_proxy_progress_percent))
+          : v.preview_ready
+            ? 100
+            : 0;
+    return (scanPct + proxyPct) / 2;
+  }
+
+  function videoIsActive(v: Video): boolean {
+    return (
+      [
+        "discovered",
+        "probing",
+        "probed",
+        "scanning",
+        "thumbnailing",
+        "subtitles_importing",
+      ].includes(v.status) || v.preview_proxy_status === "building"
+    );
+  }
+
+  function formatEta(seconds: number): string {
+    if (!Number.isFinite(seconds) || seconds < 0) return "";
+    if (seconds < 2) return "~1s left";
+    if (seconds < 60) return `~${Math.round(seconds)}s left`;
+    const mins = Math.round(seconds / 60);
+    return `~${mins}m left`;
+  }
+
+  function refreshRescanStatus(): void {
+    const active = params.videos.filter(videoIsActive);
+    if (active.length === 0) {
+      busyStartedAt = null;
+      rescanStatusEl.hidden = true;
+      return;
+    }
+    if (busyStartedAt === null) busyStartedAt = Date.now();
+    const pct = active.reduce((sum, v) => sum + videoPercent(v), 0) / active.length;
+    const elapsedMs = Date.now() - busyStartedAt;
+    let eta = "";
+    if (pct > 2 && pct < 100) {
+      const etaMs = (elapsedMs * (100 - pct)) / pct;
+      eta = formatEta(etaMs / 1000);
+    }
+    rescanStatusEl.hidden = false;
+    rescanBarEl.style.width = `${pct.toFixed(1)}%`;
+    rescanBarEl.setAttribute("aria-valuenow", pct.toFixed(0));
+    rescanLabelEl.textContent = `Processing ${active.length} video${active.length === 1 ? "" : "s"} — ${pct.toFixed(0)}%`;
+    rescanEtaEl.textContent = eta;
   }
 
   // ---------- render: segment viewer ----------
@@ -330,6 +451,19 @@ export function createUI2(initial: UI2Params): UI2Handle {
         params.onRemoveClip(i);
       });
       block.appendChild(rm);
+      // Scissors: opens a trim popover anchored to this clip.
+      if (clip.segment) {
+        const trim = document.createElement("button");
+        trim.type = "button";
+        trim.className = "vg3-comp-clip-trim";
+        trim.textContent = "✂";
+        trim.title = "Trim";
+        trim.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openTrimForClip(i, trim);
+        });
+        block.appendChild(trim);
+      }
       compClipsEl.appendChild(block);
     });
 
@@ -417,6 +551,7 @@ export function createUI2(initial: UI2Params): UI2Handle {
     compPlayBtn.classList.toggle("active", mode === "composition");
     segPlayBtn.disabled = selectedVideoId === null;
     compPlayBtn.disabled = params.clips.length === 0;
+    compExportBtn.disabled = params.clips.length === 0 || !params.composition;
   }
 
   function endComposition(): void {
@@ -595,6 +730,72 @@ export function createUI2(initial: UI2Params): UI2Handle {
     }
   });
 
+  compExportBtn.addEventListener("click", () => {
+    if (!params.composition || params.clips.length === 0) return;
+    params.onExport();
+  });
+
+  function refreshSearchClear(): void {
+    videoSearchClearBtn.classList.toggle("visible", videoSearchEl.value !== "");
+  }
+
+  // Volume control — persists across sessions.
+  const VOLUME_KEY = "vg3.playerVolume";
+  const storedVolume = Number(localStorage.getItem(VOLUME_KEY) ?? "1");
+  const initialVolume = Number.isFinite(storedVolume)
+    ? Math.max(0, Math.min(1, storedVolume))
+    : 1;
+  playerVideoEl.volume = initialVolume;
+  volumeEl.value = String(Math.round(initialVolume * 100));
+
+  function refreshVolumeIcon(): void {
+    const v = playerVideoEl.volume;
+    volumeIconEl.textContent = v === 0 ? "🔇" : v < 0.5 ? "🔉" : "🔊";
+  }
+  refreshVolumeIcon();
+
+  volumeEl.addEventListener("input", () => {
+    const v = Math.max(0, Math.min(1, parseFloat(volumeEl.value) / 100));
+    playerVideoEl.volume = v;
+    localStorage.setItem(VOLUME_KEY, String(v));
+    refreshVolumeIcon();
+  });
+
+  videoSearchEl.addEventListener("input", () => {
+    videoFilter = videoSearchEl.value;
+    refreshSearchClear();
+    renderVideoList();
+  });
+
+  videoSearchClearBtn.addEventListener("click", () => {
+    videoSearchEl.value = "";
+    videoFilter = "";
+    refreshSearchClear();
+    renderVideoList();
+    videoSearchEl.focus();
+  });
+
+  videoRescanBtn.addEventListener("click", () => {
+    params.onRescanLibrary();
+  });
+
+  refreshSearchClear();
+
+  // Only one trim popover open at a time.
+  let trimPopover: TrimPopoverHandle | null = null;
+  function openTrimForClip(index: number, anchor: HTMLElement): void {
+    const clip = params.clips[index];
+    if (!clip?.segment) return;
+    trimPopover?.close();
+    trimPopover = openTrimPopover({
+      clip,
+      anchor,
+      onChange: (trimStart, trimEnd) => {
+        params.onTrimClip(index, trimStart, trimEnd);
+      },
+    });
+  }
+
   // Composition timeline drop zone
   compTrackWrap.addEventListener("dragover", (e) => {
     if (!e.dataTransfer?.types.includes(MIME_SEGMENT)) return;
@@ -638,6 +839,7 @@ export function createUI2(initial: UI2Params): UI2Handle {
   renderSegmentLanes();
   renderCompTimeline();
   updateModeButtons();
+  refreshRescanStatus();
 
   return {
     element: root,
@@ -647,6 +849,7 @@ export function createUI2(initial: UI2Params): UI2Handle {
       renderSegmentLanes();
       renderCompTimeline();
       updateModeButtons();
+      refreshRescanStatus();
     },
     setClips: (nextClips) => {
       params = { ...params, clips: nextClips };
@@ -657,6 +860,11 @@ export function createUI2(initial: UI2Params): UI2Handle {
       params = { ...params, videos: nextVideos, segmentsByVideo: nextSegs };
       renderVideoList();
       renderSegmentLanes();
+      updateModeButtons();
+      refreshRescanStatus();
+    },
+    setComposition: (nextComposition) => {
+      params = { ...params, composition: nextComposition };
       updateModeButtons();
     },
   };
@@ -670,4 +878,11 @@ function escapeHtml(text: string): string {
 
 function escapeAttr(text: string): string {
   return escapeHtml(text).replace(/"/g, "&quot;");
+}
+
+function renderProxyBadge(status: string): string {
+  // "none" = worker hasn't started, "building" = transcode in progress.
+  const label =
+    status === "none" ? "queued" : status === "building" ? "processing" : status;
+  return `<span class="badge bg-secondary vg2-vl-badge">${escapeHtml(label)}</span>`;
 }

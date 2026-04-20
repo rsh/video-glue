@@ -2,12 +2,7 @@
  * Composition sidebar: name, load, save, export.
  */
 
-import type {
-  Composition,
-  ExportFormat,
-  ExportJob,
-  ExportScaleDivisor,
-} from "../api";
+import type { Composition, ExportFormat, ExportJob, ExportScaleDivisor } from "../api";
 import { escapeHtml } from "./feedback";
 
 export interface CompositionPanelProps {

@@ -34,11 +34,14 @@ import {
   createSubtitleSearch,
   createTimeline,
   createUI2,
+  createUI3,
   createVideoGrid,
+  openExportDialog,
   showError,
   showSuccess,
   type PreviewHandle,
   type UI2Handle,
+  type UI3Handle,
 } from "./components";
 
 // ---------- global editor state ----------
@@ -85,7 +88,8 @@ const state: EditorState = {
 
 let previewHandle: PreviewHandle | null = null;
 let ui2Handle: UI2Handle | null = null;
-let activeTab: "ui1" | "ui2" = "ui2";
+let ui3Handle: UI3Handle | null = null;
+let activeTab: "ui1" | "ui2" | "ui3" = "ui3";
 let videoPollTimer: number | null = null;
 let exportPollTimer: number | null = null;
 
@@ -181,7 +185,8 @@ async function showEditor(): Promise<void> {
     </nav>
     <div class="vg-tabs" role="tablist">
       <button type="button" class="vg-tab-btn" data-tab="ui1">UI 1</button>
-      <button type="button" class="vg-tab-btn active" data-tab="ui2">UI 2</button>
+      <button type="button" class="vg-tab-btn" data-tab="ui2">UI 2</button>
+      <button type="button" class="vg-tab-btn active" data-tab="ui3">UI 3</button>
     </div>
     <div class="vg-tab-pane" data-tab-pane="ui1">
       <div class="vg-layout">
@@ -195,8 +200,11 @@ async function showEditor(): Promise<void> {
         <div id="vg-side-pane"></div>
       </div>
     </div>
-    <div class="vg-tab-pane active" data-tab-pane="ui2">
+    <div class="vg-tab-pane" data-tab-pane="ui2">
       <div id="vg-ui2-pane"></div>
+    </div>
+    <div class="vg-tab-pane active" data-tab-pane="ui3">
+      <div id="vg-ui3-pane"></div>
     </div>
   `;
   document.getElementById("logout-btn")?.addEventListener("click", () => {
@@ -206,7 +214,7 @@ async function showEditor(): Promise<void> {
 
   document.querySelectorAll<HTMLElement>(".vg-tab-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const tab = btn.dataset["tab"] as "ui1" | "ui2";
+      const tab = btn.dataset["tab"] as "ui1" | "ui2" | "ui3";
       if (tab === activeTab) return;
       activeTab = tab;
       document.querySelectorAll<HTMLElement>(".vg-tab-btn").forEach((b) => {
@@ -216,6 +224,7 @@ async function showEditor(): Promise<void> {
         p.classList.toggle("active", p.dataset["tabPane"] === tab);
       });
       if (tab === "ui2") renderUI2();
+      if (tab === "ui3") renderUI3();
     });
   });
 
@@ -230,6 +239,19 @@ async function showEditor(): Promise<void> {
     onRemoveClip: handleRemoveClipFromUI2,
   });
   document.getElementById("vg-ui2-pane")?.appendChild(ui2Handle.element);
+
+  ui3Handle = createUI3({
+    videos: state.videos,
+    segmentsByVideo: state.segmentsByVideo,
+    clips: state.clips,
+    composition: state.current,
+    onAddClip: handleAddClipFromUI2,
+    onRemoveClip: handleRemoveClipFromUI2,
+    onTrimClip: handleTrimClipFromUI3,
+    onExport: handleExportFromUI3,
+    onRescanLibrary: handleRescanLibrary,
+  });
+  document.getElementById("vg-ui3-pane")?.appendChild(ui3Handle.element);
 
   // New empty composition on first load (no auto-select of existing ones).
   await loadCompositions();
@@ -296,6 +318,7 @@ function renderAll(): void {
     previewHandle.setClips(state.clips);
   }
   renderUI2();
+  renderUI3();
 }
 
 function renderUI2(): void {
@@ -306,6 +329,21 @@ function renderUI2(): void {
     clips: state.clips,
     onAddClip: handleAddClipFromUI2,
     onRemoveClip: handleRemoveClipFromUI2,
+  });
+}
+
+function renderUI3(): void {
+  if (!ui3Handle) return;
+  ui3Handle.update({
+    videos: state.videos,
+    segmentsByVideo: state.segmentsByVideo,
+    clips: state.clips,
+    composition: state.current,
+    onAddClip: handleAddClipFromUI2,
+    onRemoveClip: handleRemoveClipFromUI2,
+    onTrimClip: handleTrimClipFromUI3,
+    onExport: handleExportFromUI3,
+    onRescanLibrary: handleRescanLibrary,
   });
 }
 
@@ -336,6 +374,35 @@ function handleRemoveClipFromUI2(index: number): void {
   renderClipsOnly();
 }
 
+function handleTrimClipFromUI3(
+  index: number,
+  trimStart: number,
+  trimEnd: number
+): void {
+  const clip = state.clips[index];
+  if (!clip || !clip.segment) return;
+  const max = clip.segment.frame_count - 1;
+  clip.trim_start_frame = Math.max(0, Math.min(max - trimEnd, trimStart));
+  clip.trim_end_frame = Math.max(0, Math.min(max - clip.trim_start_frame, trimEnd));
+  state.dirty = true;
+  renderClipsOnly();
+}
+
+async function handleExportFromUI3(): Promise<void> {
+  if (!state.current) return;
+  // The composition's clips live in frontend state until saved — the backend
+  // would see an empty composition otherwise and reject the export.
+  if (state.dirty) {
+    await handleSave();
+    if (state.dirty) return; // save failed; showError already fired
+  }
+  if (!state.current) return;
+  openExportDialog({
+    composition: state.current,
+    defaultScaleDivisor: state.exportScaleDivisor,
+  });
+}
+
 /**
  * Granular refresh for clip-list mutations. Rebuilds only the pieces of the
  * UI whose output depends on `state.clips` — skips the (expensive) library
@@ -346,6 +413,7 @@ function renderClipsOnly(): void {
   renderPanel();
   if (previewHandle) previewHandle.setClips(state.clips);
   if (ui2Handle) ui2Handle.setClips(state.clips);
+  if (ui3Handle) ui3Handle.setClips(state.clips);
 }
 
 function renderGrid(): void {
@@ -656,6 +724,7 @@ function startVideoPolling(): void {
       if (previewHandle) previewHandle.setVideoStates(state.videos);
       // Granular: videos/segments changed, but clips didn't — skip composer rebuild.
       if (ui2Handle) ui2Handle.setVideos(state.videos, state.segmentsByVideo);
+      if (ui3Handle) ui3Handle.setVideos(state.videos, state.segmentsByVideo);
       const anyActive = state.videos.some(
         (v) =>
           [
