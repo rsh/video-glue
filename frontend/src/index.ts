@@ -521,9 +521,21 @@ function renderPanel(): void {
 async function handleRescanLibrary(): Promise<void> {
   try {
     const res = await apiClient.rescanLibrary();
-    showSuccess(`Library rescanned: +${res.added}, total ${res.total}`);
+    showSuccess(
+      `Library rescanned: +${res.added}, -${res.removed}, total ${res.total}`
+    );
     await loadVideos();
-    renderGrid();
+    // If videos were pruned, any clips in the current composition that
+    // referenced those videos have been deleted server-side too. Drop stale
+    // per-video segments from the cache, then resync the composition.
+    if (res.removed > 0) {
+      const liveIds = new Set(state.videos.map((v) => v.id));
+      for (const id of Array.from(state.segmentsByVideo.keys())) {
+        if (!liveIds.has(id)) state.segmentsByVideo.delete(id);
+      }
+      if (state.current) await loadComposition(state.current.id);
+    }
+    renderAll();
     startVideoPolling();
   } catch (err) {
     showError(errorMessage(err));

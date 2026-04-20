@@ -116,13 +116,16 @@ export class ApiClient {
 
   public async rescanLibrary(): Promise<{
     added: number;
+    removed: number;
     total: number;
     library_dir: string;
   }> {
-    return this.request<{ added: number; total: number; library_dir: string }>(
-      "/api/library/rescan",
-      { method: "POST" }
-    );
+    return this.request<{
+      added: number;
+      removed: number;
+      total: number;
+      library_dir: string;
+    }>("/api/library/rescan", { method: "POST" });
   }
 
   public async getVideos(): Promise<Video[]> {

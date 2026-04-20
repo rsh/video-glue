@@ -1,4 +1,5 @@
 """Library routes: scan the VIDEO_LIBRARY_DIR for new video files."""
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -6,7 +7,7 @@ from flask import Blueprint
 
 import config
 from auth import login_required
-from models import User, Video, db
+from models import CompositionClip, Segment, User, Video, db
 
 library_bp = Blueprint("library", __name__, url_prefix="/api/library")
 
@@ -14,7 +15,8 @@ library_bp = Blueprint("library", __name__, url_prefix="/api/library")
 @library_bp.route("/rescan", methods=["POST"])
 @login_required
 def rescan(current_user: User) -> tuple[dict, int]:
-    """Walk the configured library directory; upsert Video rows."""
+    """Walk the configured library directory; upsert Video rows and drop
+    rows for files that are no longer on disk."""
     config.ensure_dirs()
     root = config.VIDEO_LIBRARY_DIR
     added = 0
@@ -46,11 +48,37 @@ def rescan(current_user: User) -> tuple[dict, int]:
                 existing.status = "discovered"
                 existing.error_message = None
 
+    # Prune videos whose files are gone. Clip.segment_id is RESTRICT at the DB
+    # layer — any composition clips referencing a removed video's segments
+    # have to go first, or the cascade-delete would be blocked.
+    removed_ids: list[int] = []
+    for v in Video.query.all():
+        if v.path in seen_paths:
+            continue
+        seg_ids = [s.id for s in Segment.query.filter_by(video_id=v.id).all()]
+        if seg_ids:
+            CompositionClip.query.filter(
+                CompositionClip.segment_id.in_(seg_ids)
+            ).delete(synchronize_session=False)
+        removed_ids.append(v.id)
+        db.session.delete(v)
+
     db.session.commit()
+
+    # Best-effort disk cleanup for removed videos. Failures here shouldn't
+    # fail the rescan — the DB is already consistent.
+    for vid in removed_ids:
+        shutil.rmtree(config.THUMBNAIL_DIR / str(vid), ignore_errors=True)
+        proxy = config.PREVIEW_CACHE_DIR / f"{vid}.mp4"
+        try:
+            proxy.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     total = Video.query.count()
     return {
         "added": added,
+        "removed": len(removed_ids),
         "total": total,
         "library_dir": str(root),
     }, 200
