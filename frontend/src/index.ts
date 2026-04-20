@@ -33,10 +33,12 @@ import {
   createRegisterForm,
   createSubtitleSearch,
   createTimeline,
+  createUI2,
   createVideoGrid,
   showError,
   showSuccess,
   type PreviewHandle,
+  type UI2Handle,
 } from "./components";
 
 // ---------- global editor state ----------
@@ -82,6 +84,8 @@ const state: EditorState = {
 };
 
 let previewHandle: PreviewHandle | null = null;
+let ui2Handle: UI2Handle | null = null;
+let activeTab: "ui1" | "ui2" = "ui2";
 let videoPollTimer: number | null = null;
 let exportPollTimer: number | null = null;
 
@@ -175,15 +179,24 @@ async function showEditor(): Promise<void> {
         </div>
       </div>
     </nav>
-    <div class="vg-layout">
-      <div class="vg-layout-main">
-        <div id="vg-grid-pane"></div>
-        <div class="vg-bottom">
-          <div id="vg-preview-pane"></div>
-          <div id="vg-timeline-pane"></div>
+    <div class="vg-tabs" role="tablist">
+      <button type="button" class="vg-tab-btn" data-tab="ui1">UI 1</button>
+      <button type="button" class="vg-tab-btn active" data-tab="ui2">UI 2</button>
+    </div>
+    <div class="vg-tab-pane" data-tab-pane="ui1">
+      <div class="vg-layout">
+        <div class="vg-layout-main">
+          <div id="vg-grid-pane"></div>
+          <div class="vg-bottom">
+            <div id="vg-preview-pane"></div>
+            <div id="vg-timeline-pane"></div>
+          </div>
         </div>
+        <div id="vg-side-pane"></div>
       </div>
-      <div id="vg-side-pane"></div>
+    </div>
+    <div class="vg-tab-pane active" data-tab-pane="ui2">
+      <div id="vg-ui2-pane"></div>
     </div>
   `;
   document.getElementById("logout-btn")?.addEventListener("click", () => {
@@ -191,8 +204,32 @@ async function showEditor(): Promise<void> {
     logout();
   });
 
+  document.querySelectorAll<HTMLElement>(".vg-tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const tab = btn.dataset["tab"] as "ui1" | "ui2";
+      if (tab === activeTab) return;
+      activeTab = tab;
+      document.querySelectorAll<HTMLElement>(".vg-tab-btn").forEach((b) => {
+        b.classList.toggle("active", b.dataset["tab"] === tab);
+      });
+      document.querySelectorAll<HTMLElement>(".vg-tab-pane").forEach((p) => {
+        p.classList.toggle("active", p.dataset["tabPane"] === tab);
+      });
+      if (tab === "ui2") renderUI2();
+    });
+  });
+
   previewHandle = createPreview(state.clips);
   document.getElementById("vg-preview-pane")?.appendChild(previewHandle.element);
+
+  ui2Handle = createUI2({
+    videos: state.videos,
+    segmentsByVideo: state.segmentsByVideo,
+    clips: state.clips,
+    onAddClip: handleAddClipFromUI2,
+    onRemoveClip: handleRemoveClipFromUI2,
+  });
+  document.getElementById("vg-ui2-pane")?.appendChild(ui2Handle.element);
 
   // New empty composition on first load (no auto-select of existing ones).
   await loadCompositions();
@@ -258,6 +295,57 @@ function renderAll(): void {
     previewHandle.setVideoStates(state.videos);
     previewHandle.setClips(state.clips);
   }
+  renderUI2();
+}
+
+function renderUI2(): void {
+  if (!ui2Handle) return;
+  ui2Handle.update({
+    videos: state.videos,
+    segmentsByVideo: state.segmentsByVideo,
+    clips: state.clips,
+    onAddClip: handleAddClipFromUI2,
+    onRemoveClip: handleRemoveClipFromUI2,
+  });
+}
+
+function handleAddClipFromUI2(segmentId: number, insertIndex: number): void {
+  const seg = findSegment(segmentId);
+  if (!seg) {
+    showError("Segment not found");
+    return;
+  }
+  const clip: Clip = {
+    id: -1 - state.clips.length,
+    composition_id: state.current?.id ?? 0,
+    segment_id: seg.id,
+    position: insertIndex,
+    trim_start_frame: 0,
+    trim_end_frame: 0,
+    segment: seg,
+  };
+  state.clips.splice(insertIndex, 0, clip);
+  state.dirty = true;
+  renderClipsOnly();
+}
+
+function handleRemoveClipFromUI2(index: number): void {
+  state.clips.splice(index, 1);
+  if (state.selectedClipIndex === index) state.selectedClipIndex = null;
+  state.dirty = true;
+  renderClipsOnly();
+}
+
+/**
+ * Granular refresh for clip-list mutations. Rebuilds only the pieces of the
+ * UI whose output depends on `state.clips` — skips the (expensive) library
+ * grid and segment viewer.
+ */
+function renderClipsOnly(): void {
+  renderTimeline();
+  renderPanel();
+  if (previewHandle) previewHandle.setClips(state.clips);
+  if (ui2Handle) ui2Handle.setClips(state.clips);
 }
 
 function renderGrid(): void {
@@ -333,9 +421,7 @@ function renderTimeline(): void {
         state.clips.splice(i, 1);
         if (state.selectedClipIndex === i) state.selectedClipIndex = null;
         state.dirty = true;
-        renderTimeline();
-        renderPanel();
-        if (previewHandle) previewHandle.setClips(state.clips);
+        renderClipsOnly();
       },
       onReorder: (from, to) => {
         const [moved] = state.clips.splice(from, 1);
@@ -343,8 +429,7 @@ function renderTimeline(): void {
         const insertAt = to > from ? to - 1 : to;
         state.clips.splice(insertAt, 0, moved);
         state.dirty = true;
-        renderTimeline();
-        if (previewHandle) previewHandle.setClips(state.clips);
+        renderClipsOnly();
       },
       onDropSegment: (segmentId, insertIndex) => {
         const seg = findSegment(segmentId);
@@ -363,9 +448,7 @@ function renderTimeline(): void {
         };
         state.clips.splice(insertIndex, 0, clip);
         state.dirty = true;
-        renderTimeline();
-        renderPanel();
-        if (previewHandle) previewHandle.setClips(state.clips);
+        renderClipsOnly();
       },
       onTrimStartChange: (i, frames) => {
         const clip = state.clips[i];
@@ -373,8 +456,7 @@ function renderTimeline(): void {
         const max = clip.segment.frame_count - clip.trim_end_frame - 1;
         clip.trim_start_frame = Math.max(0, Math.min(max, frames));
         state.dirty = true;
-        renderTimeline();
-        if (previewHandle) previewHandle.setClips(state.clips);
+        renderClipsOnly();
       },
       onTrimEndChange: (i, frames) => {
         const clip = state.clips[i];
@@ -382,8 +464,7 @@ function renderTimeline(): void {
         const max = clip.segment.frame_count - clip.trim_start_frame - 1;
         clip.trim_end_frame = Math.max(0, Math.min(max, frames));
         state.dirty = true;
-        renderTimeline();
-        if (previewHandle) previewHandle.setClips(state.clips);
+        renderClipsOnly();
       },
       onZoomChange: (pps) => {
         state.pixelsPerSecond = pps;
@@ -529,11 +610,7 @@ async function handleExport(
     await handleSave();
   }
   try {
-    const job = await apiClient.startExport(
-      state.current.id,
-      format,
-      scaleDivisor
-    );
+    const job = await apiClient.startExport(state.current.id, format, scaleDivisor);
     state.exportJob = job;
     state.exportDownloadUrl = null;
     renderPanel();
@@ -551,7 +628,6 @@ function startVideoPolling(): void {
     try {
       const before = new Map(state.videos.map((v) => [v.id, v.status]));
       state.videos = await apiClient.getVideos();
-      let grew = false;
       for (const v of state.videos) {
         // Pull segments on first entry into thumbnailing (segments now exist)
         // and keep refreshing them while thumbnailing so tile thumbnails
@@ -562,14 +638,12 @@ function startVideoPolling(): void {
         const refreshWhileThumbnailing = wasThumbnailing && v.status === "thumbnailing";
         if (becameThumbnailing || refreshWhileThumbnailing || becameReady) {
           state.segmentsByVideo.set(v.id, await apiClient.getVideoSegments(v.id));
-          grew = true;
         }
       }
       renderGrid();
-      if (grew) {
-        // No-op: grid already re-renders above.
-      }
       if (previewHandle) previewHandle.setVideoStates(state.videos);
+      // Granular: videos/segments changed, but clips didn't — skip composer rebuild.
+      if (ui2Handle) ui2Handle.setVideos(state.videos, state.segmentsByVideo);
       const anyActive = state.videos.some(
         (v) =>
           [

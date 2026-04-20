@@ -364,3 +364,422 @@ body {
   padding: 0 2px;
   border-radius: 2px;
 }
+
+/* ---------- Tabs ---------- */
+
+.vg-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 1rem 0;
+  background: #e9ecef;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.vg-tab-btn {
+  border: 1px solid #dee2e6;
+  border-bottom: none;
+  background: #f8f9fa;
+  padding: 0.35rem 0.9rem;
+  border-radius: 4px 4px 0 0;
+  font-size: 0.9rem;
+  color: #495057;
+  cursor: pointer;
+}
+
+.vg-tab-btn.active {
+  background: #fff;
+  color: #0d6efd;
+  font-weight: 600;
+}
+
+.vg-tab-pane {
+  display: none;
+  height: calc(100vh - 56px - 40px);
+  min-height: 0;
+}
+
+.vg-tab-pane.active {
+  display: block;
+}
+
+/* ---------- UI 2 ---------- */
+
+.vg2-root {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  height: 100%;
+  min-height: 0;
+}
+
+.vg2-top {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+.vg2-video-list {
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.vg2-vl-row {
+  display: block;
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid #e9ecef;
+  background: transparent;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+}
+
+.vg2-vl-row:hover {
+  background: #f1f3f5;
+}
+
+.vg2-vl-row.active {
+  background: #e7f1ff;
+  border-left: 3px solid #0d6efd;
+  padding-left: calc(0.75rem - 3px);
+}
+
+.vg2-vl-name {
+  font-size: 0.9rem;
+  color: #212529;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vg2-vl-meta {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: #6c757d;
+  margin-top: 2px;
+  align-items: center;
+}
+
+.vg2-vl-badge {
+  font-size: 0.65rem;
+}
+
+.vg2-player {
+  background: #000;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem;
+  min-height: 0;
+}
+
+.vg2-player-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.vg2-player-video {
+  max-width: 100%;
+  max-height: 100%;
+  background: #000;
+  border-radius: 2px;
+}
+
+.vg2-player-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #adb5bd;
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+
+.vg2-player-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  color: #dee2e6;
+}
+
+.vg2-player-play {
+  min-width: 2.5rem;
+}
+
+.vg2-player-time {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.vg2-player-seek {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+/* Segment viewer */
+
+.vg2-middle {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.vg2-seg-viewer {
+  position: relative;
+  background: #212529;
+  border-radius: 4px;
+  overflow: hidden;
+  min-height: 72px;
+}
+
+.vg2-seg-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vg2-seg-lane {
+  position: relative;
+  height: 72px;
+  overflow: hidden;
+}
+
+.vg2-seg-lane-label {
+  position: absolute;
+  left: 6px;
+  top: 4px;
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  color: #fff;
+  border-radius: 3px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.vg2-seg-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  will-change: transform;
+}
+
+.vg2-seg-tile {
+  position: absolute;
+  top: 0;
+  background: #495057;
+  border: 1px solid #000;
+  border-radius: 2px;
+  cursor: grab;
+  overflow: hidden;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.vg2-seg-tile-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.vg2-seg-tile:hover {
+  outline: 2px solid #fff;
+  z-index: 3;
+}
+
+.vg2-seg-tile-dur {
+  font-size: 0.65rem;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 0 2px;
+  border-radius: 2px 0 0 0;
+  pointer-events: none;
+}
+
+.vg2-seg-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 3px;
+  background: #ffd43b;
+  box-shadow: 0 0 0 1px #000;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.vg2-seg-empty {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  color: #adb5bd;
+  font-size: 0.85rem;
+}
+
+/* Composition timeline */
+
+.vg2-bottom {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 0.5rem;
+  min-height: 0;
+}
+
+.vg2-seg-play,
+.vg2-comp-play {
+  background: #6c757d;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vg2-seg-play:hover:not(:disabled),
+.vg2-comp-play:hover:not(:disabled) {
+  background: #5a6268;
+}
+
+.vg2-seg-play.active,
+.vg2-comp-play.active {
+  background: #0d6efd;
+}
+
+.vg2-seg-play.active:hover,
+.vg2-comp-play.active:hover {
+  background: #0a58ca;
+}
+
+.vg2-seg-play:disabled,
+.vg2-comp-play:disabled {
+  background: #adb5bd;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.vg2-comp-track-wrap {
+  position: relative;
+  background: #212529;
+  border-radius: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 72px;
+}
+
+.vg2-comp-track-wrap.vg2-drop-active {
+  outline: 2px solid #0d6efd;
+  outline-offset: -2px;
+}
+
+.vg2-comp-track {
+  position: relative;
+  padding: 0;
+  height: 100%;
+  min-width: 100%;
+  display: inline-block;
+}
+
+.vg2-comp-clips {
+  display: flex;
+  gap: 0;
+  align-items: stretch;
+  height: 100%;
+}
+
+.vg2-comp-clip {
+  flex-shrink: 0;
+  border: 1px solid #000;
+  border-radius: 2px;
+  background: #495057;
+  position: relative;
+  cursor: default;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.vg2-comp-clip-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.vg2-comp-clip-label {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  padding: 0 2px;
+  border-radius: 2px 0 0 0;
+  font-size: 0.65rem;
+  pointer-events: none;
+}
+
+.vg2-comp-clip-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.vg2-comp-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #ffd43b;
+  box-shadow: 0 0 0 1px #000;
+  pointer-events: none;
+  z-index: 3;
+  display: none;
+  /* left is set by ui2.ts; translate keeps it inside the scrollable track. */
+}
+
+.vg2-comp-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #adb5bd;
+  font-size: 0.85rem;
+  pointer-events: none;
+}

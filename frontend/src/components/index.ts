@@ -15,4 +15,5 @@ export { createTimeline } from "./timeline";
 export { createPreview, type PreviewHandle } from "./preview";
 export { createCompositionPanel } from "./composition-panel";
 export { createSubtitleSearch } from "./subtitle-search";
+export { createUI2, type UI2Handle } from "./ui2";
 export { MIME_CLIP, MIME_SEGMENT } from "./drag";
