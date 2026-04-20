@@ -6,10 +6,10 @@ Chrome/Firefox/Safari. Anything else (e.g. AVI+Xvid, MP4+HEVC) gets
 transcoded once to <PREVIEW_CACHE_DIR>/<video_id>.mp4 and served from
 /stream. Preview stays approximate; exports still use the original.
 """
-import shlex
+import re
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import config
 
@@ -43,25 +43,73 @@ def has_proxy(video_id: int) -> bool:
     return proxy_path(video_id).exists()
 
 
-def generate(source: Path, dest: Path) -> None:
-    """Transcode source to a browser-friendly MP4 at dest (atomic rename)."""
+_FRAME_RE = re.compile(r"^frame=(\d+)")
+
+
+def generate(
+    source: Path,
+    dest: Path,
+    total_frames: int = 0,
+    on_progress: Optional[Callable[[float], None]] = None,
+) -> None:
+    """Transcode source to a browser-friendly MP4 at dest (atomic rename).
+
+    If `total_frames` > 0 and `on_progress` is given, `-progress pipe:1` is
+    parsed for output-frame counts and the callback receives a percentage.
+    """
     dest.parent.mkdir(parents=True, exist_ok=True)
     # Keep a ".part" temp so crashed runs don't leave a file that looks
     # finished. Force `-f mp4` because ffmpeg can't infer the muxer from
     # the ".part" extension.
     tmp = dest.with_suffix(dest.suffix + ".part")
-    flags = shlex.split(
-        "-hide_banner -loglevel error -y "
-        "-c:v libx264 -crf 23 -preset veryfast "
-        "-pix_fmt yuv420p -movflags +faststart -an "
-        "-f mp4"
-    )
-    cmd = [config.FFMPEG_BIN, *flags[:3], "-i", str(source), *flags[3:], str(tmp)]
+    cmd = [
+        config.FFMPEG_BIN,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostats",
+        "-progress",
+        "pipe:1",
+        "-y",
+        "-i",
+        str(source),
+        "-c:v",
+        "libx264",
+        "-crf",
+        "23",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-an",
+        "-f",
+        "mp4",
+        str(tmp),
+    ]
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
     except FileNotFoundError as e:
         raise ProxyError(f"ffmpeg not found: {e}") from e
-    except subprocess.CalledProcessError as e:
-        tmp.unlink(missing_ok=True)
-        raise ProxyError(f"ffmpeg failed: {e.stderr.strip()}") from e
+
+    with proc:
+        assert proc.stdout is not None
+        for raw in proc.stdout:
+            m = _FRAME_RE.match(raw)
+            if m and total_frames > 0 and on_progress is not None:
+                frames = int(m.group(1))
+                pct = min(100.0, 100.0 * frames / total_frames)
+                on_progress(pct)
+        proc.wait()
+        if proc.returncode != 0:
+            stderr = (proc.stderr.read() if proc.stderr else "") or ""
+            tmp.unlink(missing_ok=True)
+            raise ProxyError(f"ffmpeg failed: {stderr.strip()}")
     tmp.replace(dest)

@@ -14,6 +14,7 @@ import {
   type Composition,
   type ExportFormat,
   type ExportJob,
+  type ExportScaleDivisor,
   type Segment,
   type SubtitleHit,
   type Video,
@@ -54,6 +55,7 @@ interface EditorState {
   scannerFilter: string | "all";
   exportJob: ExportJob | null;
   exportDownloadUrl: string | null;
+  exportScaleDivisor: ExportScaleDivisor;
   dirty: boolean;
   topView: TopView;
   subtitleQuery: string;
@@ -72,6 +74,7 @@ const state: EditorState = {
   scannerFilter: "all",
   exportJob: null,
   exportDownloadUrl: null,
+  exportScaleDivisor: 1,
   dirty: false,
   topView: "library",
   subtitleQuery: "",
@@ -400,6 +403,7 @@ function renderPanel(): void {
       compositions: state.compositions,
       exportJob: state.exportJob,
       exportDownloadUrl: state.exportDownloadUrl,
+      exportScaleDivisor: state.exportScaleDivisor,
       onNew: async () => {
         await createBlankComposition();
         renderAll();
@@ -424,6 +428,9 @@ function renderPanel(): void {
       onSave: handleSave,
       onDelete: handleDelete,
       onExport: handleExport,
+      onExportScaleChange: (divisor) => {
+        state.exportScaleDivisor = divisor;
+      },
     })
   );
 }
@@ -508,7 +515,10 @@ async function handleDelete(): Promise<void> {
   }
 }
 
-async function handleExport(format: ExportFormat): Promise<void> {
+async function handleExport(
+  format: ExportFormat,
+  scaleDivisor: ExportScaleDivisor
+): Promise<void> {
   if (!state.current) return;
   if (state.dirty) {
     if (
@@ -519,7 +529,11 @@ async function handleExport(format: ExportFormat): Promise<void> {
     await handleSave();
   }
   try {
-    const job = await apiClient.startExport(state.current.id, format);
+    const job = await apiClient.startExport(
+      state.current.id,
+      format,
+      scaleDivisor
+    );
     state.exportJob = job;
     state.exportDownloadUrl = null;
     renderPanel();

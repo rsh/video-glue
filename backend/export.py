@@ -1,9 +1,15 @@
 """ffmpeg-based composition export.
 
 Single-pass filter_complex approach:
-  - per clip i: [N:v]trim=start_frame=S_i:end_frame=E_i,setpts=PTS-STARTPTS[v_i]
+  - per clip i: dedicated `-ss <clip_start_time> -i <source>` input so ffmpeg
+    seeks to the clip's location via keyframe + accurate decode instead of
+    decoding the whole file from frame 0. Without this, a clip deep into a
+    long source pegs ffmpeg at 0% output for minutes while it decode-discards
+    everything before the trim window.
+  - per clip i: [N:v]trim=start_frame=0:end_frame=L_i,setpts=PTS-STARTPTS[v_i]
+    (trim is frame-exact from the decoded stream's start, which `-ss` places
+    at the clip's in-point).
   - concat them: [v_0][v_1]...concat=n=N:v=1:a=0[out]
-Frame-exact because `trim` uses frame indices, not timestamps.
 Audio is stripped (`-an`) in v1.
 """
 import re
@@ -19,35 +25,13 @@ import config
 class ClipSpec:
     source_path: Path
     source_total_frames: int
+    source_fps: float  # frames-per-second of the source, for -ss seek math
     start_frame: int  # effective in-point (segment.start + trim_start)
     end_frame: int  # effective out-point (segment.end - trim_end), exclusive
 
 
 class ExportError(RuntimeError):
     pass
-
-
-def _input_indices(clips: List[ClipSpec]) -> List[int]:
-    """Map each clip to an ffmpeg input index, dedup'd by source path."""
-    seen: dict[str, int] = {}
-    result: List[int] = []
-    for c in clips:
-        key = str(c.source_path)
-        if key not in seen:
-            seen[key] = len(seen)
-        result.append(seen[key])
-    return result
-
-
-def _unique_sources(clips: List[ClipSpec]) -> List[Path]:
-    seen: set[str] = set()
-    out: List[Path] = []
-    for c in clips:
-        k = str(c.source_path)
-        if k not in seen:
-            seen.add(k)
-            out.append(c.source_path)
-    return out
 
 
 def _encoder_args(fmt: str, output_path: Path) -> List[str]:
@@ -86,24 +70,36 @@ def _encoder_args(fmt: str, output_path: Path) -> List[str]:
     raise ValueError(f"unknown format: {fmt}")
 
 
-def build_command(clips: List[ClipSpec], fmt: str, output_path: Path) -> List[str]:
-    """Build the ffmpeg argv for exporting `clips` to `output_path` as `fmt`."""
+def build_command(
+    clips: List[ClipSpec],
+    fmt: str,
+    output_path: Path,
+    scale_divisor: int = 1,
+) -> List[str]:
+    """Build the ffmpeg argv for exporting `clips` to `output_path` as `fmt`.
+
+    `scale_divisor` downscales the output resolution by that factor (1 = full,
+    2 = half, 4 = quarter). Ignored for gif, which already has a fixed
+    scale stage.
+    """
     if not clips:
         raise ExportError("composition is empty")
-
-    sources = _unique_sources(clips)
-    input_idx = _input_indices(clips)
+    if scale_divisor not in (1, 2, 4):
+        raise ExportError(f"scale_divisor must be 1, 2, or 4 (got {scale_divisor})")
 
     cmd: List[str] = [config.FFMPEG_BIN, "-hide_banner", "-y"]
-    for src in sources:
-        cmd.extend(["-i", str(src)])
+    for clip in clips:
+        # -ss before -i uses fast keyframe seek + accurate decode-to-time, so
+        # the decoded stream starts at (approximately) the clip's in-point.
+        start_time = clip.start_frame / clip.source_fps if clip.source_fps > 0 else 0.0
+        cmd.extend(["-ss", f"{start_time:.6f}", "-i", str(clip.source_path)])
 
     filter_parts: List[str] = []
     for i, clip in enumerate(clips):
-        src_i = input_idx[i]
+        length = clip.end_frame - clip.start_frame
         filter_parts.append(
-            f"[{src_i}:v]"
-            f"trim=start_frame={clip.start_frame}:end_frame={clip.end_frame},"
+            f"[{i}:v]"
+            f"trim=start_frame=0:end_frame={length},"
             f"setpts=PTS-STARTPTS[v{i}]"
         )
     concat_inputs = "".join(f"[v{i}]" for i in range(len(clips)))
@@ -129,7 +125,15 @@ def build_command(clips: List[ClipSpec], fmt: str, output_path: Path) -> List[st
         )
         return cmd
 
-    filter_parts.append(f"{concat_inputs}concat=n={len(clips)}:v=1:a=0[out]")
+    # trunc(...)*2 keeps dimensions even, required by yuv420p / libx264.
+    scale_stage = (
+        ""
+        if scale_divisor == 1
+        else f",scale=trunc(iw/{scale_divisor}/2)*2:trunc(ih/{scale_divisor}/2)*2"
+    )
+    filter_parts.append(
+        f"{concat_inputs}concat=n={len(clips)}:v=1:a=0{scale_stage}[out]"
+    )
     filter_complex = ";".join(filter_parts)
     cmd.extend(["-filter_complex", filter_complex, "-map", "[out]"])
     cmd.extend(_encoder_args(fmt, output_path))

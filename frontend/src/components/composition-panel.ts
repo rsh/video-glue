@@ -2,7 +2,12 @@
  * Composition sidebar: name, load, save, export.
  */
 
-import type { Composition, ExportFormat, ExportJob } from "../api";
+import type {
+  Composition,
+  ExportFormat,
+  ExportJob,
+  ExportScaleDivisor,
+} from "../api";
 import { escapeHtml } from "./feedback";
 
 export interface CompositionPanelProps {
@@ -10,12 +15,14 @@ export interface CompositionPanelProps {
   compositions: Composition[];
   exportJob: ExportJob | null;
   exportDownloadUrl: string | null;
+  exportScaleDivisor: ExportScaleDivisor;
   onNew: () => void;
   onLoad: (id: number) => void;
   onRename: (name: string) => void;
   onSave: () => void;
   onDelete: () => void;
-  onExport: (format: ExportFormat) => void;
+  onExport: (format: ExportFormat, scaleDivisor: ExportScaleDivisor) => void;
+  onExportScaleChange: (scaleDivisor: ExportScaleDivisor) => void;
 }
 
 export function createCompositionPanel(props: CompositionPanelProps): HTMLElement {
@@ -65,6 +72,15 @@ export function createCompositionPanel(props: CompositionPanelProps): HTMLElemen
           <strong>Export</strong>
           <small class="text-muted ms-auto">${exportStatusText(props.exportJob)}</small>
         </div>
+        <div class="d-flex gap-2 align-items-center mb-2">
+          <label class="form-label small mb-0">Resolution</label>
+          <select class="form-select form-select-sm" id="vg-export-scale" style="width: auto;" ${current ? "" : "disabled"}>
+            <option value="1" ${props.exportScaleDivisor === 1 ? "selected" : ""}>Full</option>
+            <option value="2" ${props.exportScaleDivisor === 2 ? "selected" : ""}>½ size</option>
+            <option value="4" ${props.exportScaleDivisor === 4 ? "selected" : ""}>¼ size</option>
+          </select>
+          <small class="text-muted ms-auto">gif uses a fixed size</small>
+        </div>
         <div class="d-flex gap-2 mb-2">
           <button type="button" class="btn btn-sm btn-success" data-fmt="mp4" ${current ? "" : "disabled"}>MP4</button>
           <button type="button" class="btn btn-sm btn-success" data-fmt="webm" ${current ? "" : "disabled"}>WebM</button>
@@ -95,10 +111,18 @@ export function createCompositionPanel(props: CompositionPanelProps): HTMLElemen
     if (Number.isFinite(id)) props.onLoad(id);
   });
 
+  const scaleSel = el.querySelector("#vg-export-scale") as HTMLSelectElement | null;
+  scaleSel?.addEventListener("change", () => {
+    const value = parseInt(scaleSel.value, 10);
+    if (value === 1 || value === 2 || value === 4) {
+      props.onExportScaleChange(value);
+    }
+  });
+
   el.querySelectorAll("button[data-fmt]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       const fmt = (e.currentTarget as HTMLElement).dataset["fmt"] as ExportFormat;
-      props.onExport(fmt);
+      props.onExport(fmt, props.exportScaleDivisor);
     });
   });
 

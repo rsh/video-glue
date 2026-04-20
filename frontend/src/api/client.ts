@@ -9,6 +9,7 @@ import type {
   Composition,
   ExportFormat,
   ExportJob,
+  ExportScaleDivisor,
   LoginRequest,
   RegisterRequest,
   ScannerInfo,
@@ -215,11 +216,15 @@ export class ApiClient {
 
   public async startExport(
     compositionId: number,
-    format: ExportFormat
+    format: ExportFormat,
+    scaleDivisor: ExportScaleDivisor = 1
   ): Promise<ExportJob> {
     const response = await this.request<{ export: ExportJob }>(
       `/api/compositions/${compositionId}/export`,
-      { method: "POST", body: JSON.stringify({ format }) }
+      {
+        method: "POST",
+        body: JSON.stringify({ format, scale_divisor: scaleDivisor }),
+      }
     );
     return response.export;
   }

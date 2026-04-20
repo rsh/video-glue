@@ -48,3 +48,11 @@ class ClipsReplaceRequest(BaseModel):
 
 class ExportCreateRequest(BaseModel):
     format: str = Field(pattern="^(mp4|webm|gif)$")
+    scale_divisor: int = Field(default=1)
+
+    @field_validator("scale_divisor")
+    @classmethod
+    def scale_divisor_allowed(cls, v: int) -> int:
+        if v not in (1, 2, 4):
+            raise ValueError("scale_divisor must be 1, 2, or 4")
+        return v

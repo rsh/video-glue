@@ -26,7 +26,12 @@ def create_export(comp_id: int, current_user: User) -> tuple[dict, int]:
     if not CompositionClip.query.filter_by(composition_id=comp.id).first():
         return {"error": "composition is empty"}, 400
 
-    job = ExportJob(composition_id=comp.id, format=data.format, status="queued")
+    job = ExportJob(
+        composition_id=comp.id,
+        format=data.format,
+        scale_divisor=data.scale_divisor,
+        status="queued",
+    )
     db.session.add(job)
     db.session.commit()
     return {"export": job.to_dict()}, 202

@@ -1,18 +1,25 @@
 """Pytest configuration and fixtures."""
 import os
+import tempfile
 from typing import Generator
 
 import pytest
+from alembic import command
 from flask import Flask
 from flask.testing import FlaskClient
 
-# Set test environment before importing app
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+# Set test environment before importing app. Use a real SQLite file per test
+# session (not :memory:) so alembic — which opens its own connection — sees
+# the same DB the Flask app does.
+_tmp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+_tmp_db.close()
+os.environ["DATABASE_URL"] = f"sqlite:///{_tmp_db.name}"
 os.environ["SECRET_KEY"] = "test-secret-key"
 
 from api import \
     app as \
     flask_app  # noqa: E402 - imports after setting test environment variables
+from app import _alembic_config  # noqa: E402
 from models import (  # noqa: E402 - imports after setting test environment variables
     User, db)
 
@@ -21,13 +28,17 @@ from models import (  # noqa: E402 - imports after setting test environment vari
 def app() -> Generator[Flask, None, None]:
     """Create application for testing."""
     flask_app.config["TESTING"] = True
-    flask_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
 
-    with flask_app.app_context():
-        db.create_all()
-        yield flask_app
-        db.session.remove()
-        db.drop_all()
+    # Migrate the test DB to head, yield, then roll back to base so the next
+    # test starts from a clean slate.
+    cfg = _alembic_config()
+    command.upgrade(cfg, "head")
+    try:
+        with flask_app.app_context():
+            yield flask_app
+            db.session.remove()
+    finally:
+        command.downgrade(cfg, "base")
 
 
 @pytest.fixture

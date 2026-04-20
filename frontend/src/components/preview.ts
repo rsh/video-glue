@@ -344,7 +344,13 @@ export function createPreview(initialClips: Clip[]): PreviewHandle {
       state.clips = clips;
       if (state.currentClipIndex >= clips.length) state.currentClipIndex = 0;
       cancelScheduledSwap();
-      updateOverlayFromCurrent();
+      const blocked = updateOverlayFromCurrent();
+      // Apply the current clip's source + trim-adjusted start to the active
+      // element so the preview reflects a freshly-loaded composition or an
+      // in-place trim edit without waiting for a play/select.
+      if (!blocked && state.clips[state.currentClipIndex]?.segment) {
+        prepareRole(state.active, state.currentClipIndex, state.playing);
+      }
       primePreloader(state.currentClipIndex + 1);
     },
     setVideoStates: (videos) => {

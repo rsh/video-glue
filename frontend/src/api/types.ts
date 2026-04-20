@@ -37,6 +37,7 @@ export interface Video {
   scan_started_at: string | null;
   preview_proxy_status: PreviewProxyStatus;
   preview_proxy_started_at: string | null;
+  preview_proxy_progress_percent: number;
   preview_proxy_error_message: string | null;
   preview_ready: boolean;
   error_message: string | null;
@@ -95,11 +96,13 @@ export interface ClipInput {
 
 export type ExportFormat = "mp4" | "webm" | "gif";
 export type ExportStatus = "queued" | "running" | "done" | "error";
+export type ExportScaleDivisor = 1 | 2 | 4;
 
 export interface ExportJob {
   id: number;
   composition_id: number;
   format: ExportFormat;
+  scale_divisor: ExportScaleDivisor;
   status: ExportStatus;
   progress_percent: number;
   error_message: string | null;

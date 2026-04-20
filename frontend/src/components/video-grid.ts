@@ -94,10 +94,17 @@ function renderVideoRow(video: Video, props: VideoGridProps): HTMLElement {
   if (video.preview_proxy_status === "building") {
     const row2 = document.createElement("div");
     row2.className = "vg-proxy-status text-muted small";
-    const elapsed = elapsedSince(video.preview_proxy_started_at);
+    const pct = Math.max(0, Math.min(100, video.preview_proxy_progress_percent));
+    const eta = estimateProxyEta(video);
     row2.innerHTML = `
-      <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-      Building browser-playable preview${elapsed ? ` · ${elapsed} elapsed` : ""}
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        <span>Building browser-playable preview · ${pct.toFixed(0)}%</span>
+        <small class="text-muted ms-auto">${eta}</small>
+      </div>
+      <div class="progress" style="height: 4px;">
+        <div class="progress-bar" role="progressbar" style="width: ${pct}%" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"></div>
+      </div>
     `;
     row.appendChild(row2);
   } else if (video.preview_proxy_status === "error") {
@@ -155,21 +162,27 @@ function renderSegmentTile(seg: Segment): HTMLElement {
   return tile;
 }
 
-function elapsedSince(iso: string | null): string {
-  if (!iso) return "";
-  const started = Date.parse(iso);
-  if (!Number.isFinite(started)) return "";
-  const ms = Math.max(0, Date.now() - started);
-  return formatRemaining(ms);
+function estimateScanEta(video: Video): string {
+  return formatEta(video.scan_started_at, video.scan_progress_percent);
 }
 
-function estimateScanEta(video: Video): string {
-  const pct = video.scan_progress_percent;
-  if (!video.scan_started_at || pct <= 0.5) return "estimating remaining time…";
-  const started = Date.parse(video.scan_started_at);
+function estimateProxyEta(video: Video): string {
+  return formatEta(
+    video.preview_proxy_started_at,
+    video.preview_proxy_progress_percent
+  );
+}
+
+function formatEta(startedIso: string | null, pct: number): string {
+  if (!startedIso) return "";
+  const started = Date.parse(startedIso);
   if (!Number.isFinite(started)) return "";
-  const elapsedMs = Date.now() - started;
-  if (elapsedMs <= 0) return "";
+  const elapsedMs = Math.max(0, Date.now() - started);
+  if (pct <= 0.5) {
+    return elapsedMs > 0
+      ? `elapsed ${formatRemaining(elapsedMs)} · estimating…`
+      : "estimating…";
+  }
   const totalMs = (elapsedMs / pct) * 100;
   const remainingMs = Math.max(0, totalMs - elapsedMs);
   return `~${formatRemaining(remainingMs)} remaining · elapsed ${formatRemaining(elapsedMs)}`;

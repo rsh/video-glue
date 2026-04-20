@@ -1,11 +1,12 @@
-"""Reset the database: drop all tables, recreate from models."""
-from api import app
-from models import db
+"""Reset the database: downgrade everything, then re-apply migrations."""
+from alembic import command
+
+from app import _alembic_config
 
 if __name__ == "__main__":
-    with app.app_context():
-        print("Dropping all tables...")
-        db.drop_all()
-        print("Creating all tables...")
-        db.create_all()
-        print("Database schema recreated.")
+    cfg = _alembic_config()
+    print("Rolling schema back to base...")
+    command.downgrade(cfg, "base")
+    print("Upgrading to head...")
+    command.upgrade(cfg, "head")
+    print("Database schema recreated.")

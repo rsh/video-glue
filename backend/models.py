@@ -4,9 +4,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, cast
 
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import event
-from sqlalchemy.engine import Connection
-from sqlalchemy.sql.schema import Table
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import preview_cache
@@ -16,6 +13,22 @@ db = SQLAlchemy()
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _iso(dt: Optional[datetime]) -> Optional[str]:
+    """Serialize a datetime as an ISO-8601 string explicitly in UTC with `Z`.
+
+    SQLAlchemy's default DateTime column on SQLite drops tz info on write, so
+    the value comes back naive even though the stored wall-clock is UTC.
+    Without an explicit offset, JS `Date.parse` interprets the string as local
+    time — elapsed/ETA math then comes out wildly wrong (negative in
+    west-of-UTC zones, hours-too-big east-of-UTC).
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.isoformat() + "Z"
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 class User(db.Model):  # type: ignore[name-defined,misc]
@@ -49,7 +62,7 @@ class User(db.Model):  # type: ignore[name-defined,misc]
         data: Dict[str, Any] = {
             "id": self.id,
             "username": self.username,
-            "created_at": self.created_at.isoformat(),
+            "created_at": _iso(self.created_at),
         }
         if include_email:
             data["email"] = self.email
@@ -83,6 +96,7 @@ class Video(db.Model):  # type: ignore[name-defined,misc]
         db.String(16), nullable=False, default="none", index=True
     )
     preview_proxy_started_at = db.Column(db.DateTime, nullable=True)
+    preview_proxy_progress_percent = db.Column(db.Float, nullable=False, default=0.0)
     preview_proxy_error_message = db.Column(db.Text, nullable=True)
     error_message = db.Column(db.Text, nullable=True)
     discovered_at = db.Column(db.DateTime, nullable=False, default=_utcnow)
@@ -112,8 +126,10 @@ class Video(db.Model):  # type: ignore[name-defined,misc]
     @property
     def preview_ready(self) -> bool:
         """True when an HTML5 <video> can actually play this for preview."""
-        if self.container and self.codec and not preview_cache.needs_proxy(
-            self.container, self.codec
+        if (
+            self.container
+            and self.codec
+            and not preview_cache.needs_proxy(self.container, self.codec)
         ):
             return True
         return self.preview_proxy_status == "ready"
@@ -124,7 +140,7 @@ class Video(db.Model):  # type: ignore[name-defined,misc]
             "path": self.path,
             "filename": self.filename,
             "size_bytes": self.size_bytes,
-            "date_modified": self.date_modified.isoformat(),
+            "date_modified": _iso(self.date_modified),
             "duration_seconds": self.duration_seconds,
             "width": self.width,
             "height": self.height,
@@ -134,20 +150,15 @@ class Video(db.Model):  # type: ignore[name-defined,misc]
             "codec": self.codec,
             "status": self.status,
             "scan_progress_percent": self.scan_progress_percent,
-            "scan_started_at": (
-                self.scan_started_at.isoformat() if self.scan_started_at else None
-            ),
+            "scan_started_at": _iso(self.scan_started_at),
             "preview_proxy_status": self.preview_proxy_status,
-            "preview_proxy_started_at": (
-                self.preview_proxy_started_at.isoformat()
-                if self.preview_proxy_started_at
-                else None
-            ),
+            "preview_proxy_started_at": _iso(self.preview_proxy_started_at),
+            "preview_proxy_progress_percent": self.preview_proxy_progress_percent,
             "preview_proxy_error_message": self.preview_proxy_error_message,
             "preview_ready": self.preview_ready,
             "error_message": self.error_message,
-            "discovered_at": self.discovered_at.isoformat(),
-            "updated_at": self.updated_at.isoformat(),
+            "discovered_at": _iso(self.discovered_at),
+            "updated_at": _iso(self.updated_at),
         }
 
 
@@ -203,8 +214,8 @@ class ScanRun(db.Model):  # type: ignore[name-defined,misc]
             "scanner_id": self.scanner_id,
             "scanner_name": self.scanner.name if self.scanner else None,
             "status": self.status,
-            "started_at": self.started_at.isoformat() if self.started_at else None,
-            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "started_at": _iso(self.started_at),
+            "finished_at": _iso(self.finished_at),
             "error_message": self.error_message,
         }
 
@@ -298,8 +309,8 @@ class Composition(db.Model):  # type: ignore[name-defined,misc]
             "name": self.name,
             "owner_id": self.owner_id,
             "notes": self.notes,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat(),
+            "created_at": _iso(self.created_at),
+            "updated_at": _iso(self.updated_at),
         }
         if include_clips:
             data["clips"] = [c.to_dict() for c in self.clips]
@@ -364,6 +375,9 @@ class ExportJob(db.Model):  # type: ignore[name-defined,misc]
         nullable=False,
     )
     format = db.Column(db.String(16), nullable=False)  # mp4 | webm | gif
+    # 1 = full res, 2 = half, 4 = quarter. Ignored for gif (which already
+    # scales to a fixed width).
+    scale_divisor = db.Column(db.Integer, nullable=False, default=1)
     status = db.Column(db.String(32), nullable=False, default="queued")
     output_path = db.Column(db.String(1024), nullable=True)
     progress_percent = db.Column(db.Float, nullable=False, default=0.0)
@@ -376,11 +390,12 @@ class ExportJob(db.Model):  # type: ignore[name-defined,misc]
             "id": self.id,
             "composition_id": self.composition_id,
             "format": self.format,
+            "scale_divisor": self.scale_divisor,
             "status": self.status,
             "progress_percent": self.progress_percent,
             "error_message": self.error_message,
-            "created_at": self.created_at.isoformat(),
-            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "created_at": _iso(self.created_at),
+            "finished_at": _iso(self.finished_at),
             "download_available": self.status == "done",
         }
 
@@ -432,7 +447,7 @@ class SubtitleTrack(db.Model):  # type: ignore[name-defined,misc]
             "language": self.language,
             "origin": self.origin,
             "cue_count": self.cue_count,
-            "imported_at": self.imported_at.isoformat(),
+            "imported_at": _iso(self.imported_at),
             "meta": json.loads(self.meta_json or "{}"),
         }
 
@@ -476,62 +491,6 @@ class SubtitleCue(db.Model):  # type: ignore[name-defined,misc]
     )
 
 
-# ---------------------------------------------------------------------------
-# FTS5 virtual table + sync triggers.
-#
-# SQLAlchemy's metadata doesn't model SQLite virtual tables or triggers
-# natively, so we hook into the DDL lifecycle: after the regular
-# subtitle_cues table is created, issue the CREATE VIRTUAL TABLE and three
-# triggers in the same transaction. Contentless FTS5 (content=subtitle_cues,
-# content_rowid=id) avoids duplicating the text column.
-# ---------------------------------------------------------------------------
-
-
-_FTS_DDL_STATEMENTS = (
-    """
-    CREATE VIRTUAL TABLE IF NOT EXISTS subtitle_cues_fts USING fts5(
-        text,
-        content='subtitle_cues',
-        content_rowid='id',
-        tokenize='porter unicode61'
-    )
-    """,
-    """
-    CREATE TRIGGER IF NOT EXISTS subtitle_cues_ai
-    AFTER INSERT ON subtitle_cues
-    BEGIN
-        INSERT INTO subtitle_cues_fts(rowid, text) VALUES (new.id, new.text);
-    END
-    """,
-    """
-    CREATE TRIGGER IF NOT EXISTS subtitle_cues_ad
-    AFTER DELETE ON subtitle_cues
-    BEGIN
-        INSERT INTO subtitle_cues_fts(subtitle_cues_fts, rowid, text)
-            VALUES ('delete', old.id, old.text);
-    END
-    """,
-    """
-    CREATE TRIGGER IF NOT EXISTS subtitle_cues_au
-    AFTER UPDATE ON subtitle_cues
-    BEGIN
-        INSERT INTO subtitle_cues_fts(subtitle_cues_fts, rowid, text)
-            VALUES ('delete', old.id, old.text);
-        INSERT INTO subtitle_cues_fts(rowid, text) VALUES (new.id, new.text);
-    END
-    """,
-)
-
-
-def _after_subtitle_cues_create(
-    target: Table, connection: Connection, **_: Any
-) -> None:
-    # Only applies to SQLite; no-op on other backends (not that we have any).
-    dialect = connection.engine.dialect.name
-    if dialect != "sqlite":
-        return
-    for stmt in _FTS_DDL_STATEMENTS:
-        connection.exec_driver_sql(stmt.strip())
-
-
-event.listen(SubtitleCue.__table__, "after_create", _after_subtitle_cues_create)
+# The SQLite FTS5 virtual table (subtitle_cues_fts) and its three sync
+# triggers live in alembic migrations — SQLAlchemy metadata can't model
+# them natively. See the initial schema migration.

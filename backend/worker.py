@@ -247,13 +247,34 @@ def _ensure_preview_proxy(video: Video) -> None:
 
     video.preview_proxy_status = "building"
     video.preview_proxy_started_at = _utcnow()
+    video.preview_proxy_progress_percent = 0.0
     video.preview_proxy_error_message = None
     db.session.commit()
 
     dest = preview_cache.proxy_path(video.id)
     logger.info("building preview proxy for video %s (%s)", video.id, video.path)
+
+    # Throttle: writing the DB on every ffmpeg progress line would be heavy.
+    video_id = video.id
+    last = {"pct": 0.0, "t": 0.0}
+
+    def on_progress(pct: float) -> None:
+        now = time.monotonic()
+        if pct - last["pct"] < 1.0 and now - last["t"] < 1.0:
+            return
+        last["pct"] = pct
+        last["t"] = now
+        db.session.execute(
+            db.update(Video)
+            .where(Video.id == video_id)
+            .values(preview_proxy_progress_percent=pct)
+        )
+        db.session.commit()
+
     try:
-        preview_cache.generate(src, dest)
+        preview_cache.generate(
+            src, dest, total_frames=video.total_frames or 0, on_progress=on_progress
+        )
     except preview_cache.ProxyError as e:
         logger.warning("preview proxy failed for %s: %s", video.path, e)
         video.preview_proxy_status = "error"
@@ -262,6 +283,7 @@ def _ensure_preview_proxy(video: Video) -> None:
         return
 
     video.preview_proxy_status = "ready"
+    video.preview_proxy_progress_percent = 100.0
     video.preview_proxy_error_message = None
     db.session.commit()
 
@@ -291,10 +313,18 @@ def _run_export(job: ExportJob) -> None:
             job.finished_at = _utcnow()
             db.session.commit()
             return
+        fps = seg.video.fps
+        if not fps:
+            job.status = "error"
+            job.error_message = "source video missing fps metadata"
+            job.finished_at = _utcnow()
+            db.session.commit()
+            return
         specs.append(
             export_mod.ClipSpec(
                 source_path=Path(seg.video.path),
                 source_total_frames=seg.video.total_frames or 0,
+                source_fps=fps,
                 start_frame=seg.start_frame + cc.trim_start_frame,
                 end_frame=seg.end_frame - cc.trim_end_frame,
             )
@@ -305,7 +335,9 @@ def _run_export(job: ExportJob) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        cmd = export_mod.build_command(specs, job.format, out_path)
+        cmd = export_mod.build_command(
+            specs, job.format, out_path, scale_divisor=job.scale_divisor
+        )
         total_frames = export_mod.total_output_frames(specs)
 
         def on_progress(pct: float) -> None:

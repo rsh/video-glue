@@ -11,6 +11,7 @@ export type {
   Composition,
   ExportFormat,
   ExportJob,
+  ExportScaleDivisor,
   ExportStatus,
   LoginRequest,
   RegisterRequest,
