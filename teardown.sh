@@ -2,23 +2,23 @@
 # Teardown — stops Flask + webpack dev server, optionally wipes local data.
 #
 # Usage:
-#   ./teardown.sh              # just stop services
-#   ./teardown.sh --reset-db   # also wipe data/video-glue.db*, thumbnails, and exports
-#                              # (library/ is left alone; re-scan to repopulate)
+#   ./teardown.sh            # just stop services
+#   ./teardown.sh --delete   # also wipe DB, transcoded previews, thumbnails, exports
+#                            # (library/ is left alone; re-run the rescan to repopulate)
 
 set -e
 
-RESET_DB=false
+DELETE=false
 for arg in "$@"; do
     case "$arg" in
-        --reset-db) RESET_DB=true ;;
+        --delete) DELETE=true ;;
         -h|--help)
             sed -n '2,6p' "$0"
             exit 0
             ;;
         *)
             echo "Unknown argument: $arg" >&2
-            echo "Usage: $0 [--reset-db]" >&2
+            echo "Usage: $0 [--delete]" >&2
             exit 2
             ;;
     esac
@@ -68,9 +68,9 @@ kill_repo_processes "Flask backend" "python.*app\.py"
 echo -e "${BLUE}Stopping webpack dev server...${NC}"
 kill_repo_processes "webpack dev server" "webpack.*serve|webpack-dev-server"
 
-if [ "$RESET_DB" = true ]; then
+if [ "$DELETE" = true ]; then
     echo ""
-    echo -e "${BLUE}Resetting local data...${NC}"
+    echo -e "${BLUE}Deleting local data...${NC}"
 
     # Load .env so we honour overrides (VIDEOGLUE_DATA_DIR, DATABASE_URL, …).
     if [ -f "$REPO_ROOT/backend/.env" ]; then
@@ -98,7 +98,8 @@ if [ "$RESET_DB" = true ]; then
 
     THUMB_DIR="${VIDEOGLUE_THUMBNAIL_DIR:-$DATA_DIR/thumbnails}"
     EXPORT_DIR="${VIDEOGLUE_EXPORT_DIR:-$DATA_DIR/exports}"
-    for d in "$THUMB_DIR" "$EXPORT_DIR"; do
+    PREVIEW_DIR="${VIDEOGLUE_PREVIEW_CACHE_DIR:-$DATA_DIR/preview_cache}"
+    for d in "$THUMB_DIR" "$EXPORT_DIR" "$PREVIEW_DIR"; do
         if [ -d "$d" ]; then
             rm -rf "$d"
             mkdir -p "$d"
