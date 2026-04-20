@@ -220,13 +220,18 @@ export class ApiClient {
   public async startExport(
     compositionId: number,
     format: ExportFormat,
-    scaleDivisor: ExportScaleDivisor = 1
+    scaleDivisor: ExportScaleDivisor = 1,
+    includeAudio: boolean = false
   ): Promise<ExportJob> {
     const response = await this.request<{ export: ExportJob }>(
       `/api/compositions/${compositionId}/export`,
       {
         method: "POST",
-        body: JSON.stringify({ format, scale_divisor: scaleDivisor }),
+        body: JSON.stringify({
+          format,
+          scale_divisor: scaleDivisor,
+          include_audio: includeAudio,
+        }),
       }
     );
     return response.export;

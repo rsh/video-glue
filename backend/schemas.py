@@ -49,6 +49,7 @@ class ClipsReplaceRequest(BaseModel):
 class ExportCreateRequest(BaseModel):
     format: str = Field(pattern="^(mp4|webm|gif)$")
     scale_divisor: int = Field(default=1)
+    include_audio: bool = Field(default=False)
 
     @field_validator("scale_divisor")
     @classmethod

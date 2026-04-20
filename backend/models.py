@@ -378,6 +378,9 @@ class ExportJob(db.Model):  # type: ignore[name-defined,misc]
     # 1 = full res, 2 = half, 4 = quarter. Ignored for gif (which already
     # scales to a fixed width).
     scale_divisor = db.Column(db.Integer, nullable=False, default=1)
+    # Whether the export should include the audio track. Default False to
+    # preserve the old silent-export behavior for older jobs.
+    include_audio = db.Column(db.Boolean, nullable=False, default=False)
     status = db.Column(db.String(32), nullable=False, default="queued")
     output_path = db.Column(db.String(1024), nullable=True)
     progress_percent = db.Column(db.Float, nullable=False, default=0.0)
@@ -391,6 +394,7 @@ class ExportJob(db.Model):  # type: ignore[name-defined,misc]
             "composition_id": self.composition_id,
             "format": self.format,
             "scale_divisor": self.scale_divisor,
+            "include_audio": self.include_audio,
             "status": self.status,
             "progress_percent": self.progress_percent,
             "error_message": self.error_message,

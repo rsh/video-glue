@@ -30,6 +30,7 @@ def create_export(comp_id: int, current_user: User) -> tuple[dict, int]:
         composition_id=comp.id,
         format=data.format,
         scale_divisor=data.scale_divisor,
+        include_audio=data.include_audio,
         status="queued",
     )
     db.session.add(job)

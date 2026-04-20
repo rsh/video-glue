@@ -103,6 +103,7 @@ export interface ExportJob {
   composition_id: number;
   format: ExportFormat;
   scale_divisor: ExportScaleDivisor;
+  include_audio: boolean;
   status: ExportStatus;
   progress_percent: number;
   error_message: string | null;

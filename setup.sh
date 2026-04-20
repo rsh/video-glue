@@ -30,6 +30,27 @@ fi
 echo -e "${GREEN}✓${NC} Prerequisites checked"
 echo ""
 
+# Detect a GPU-accelerated H264 encoder. Preference order:
+#   NVIDIA NVENC (requires a working nvidia-smi, not just ffmpeg support)
+#   macOS VideoToolbox (Darwin only)
+#   libx264 (CPU fallback)
+H264_ENCODER="libx264"
+if command -v ffmpeg &> /dev/null; then
+    ENCODERS=$(ffmpeg -hide_banner -encoders 2>/dev/null || true)
+    if echo "$ENCODERS" | grep -q " h264_nvenc " \
+        && command -v nvidia-smi &> /dev/null \
+        && nvidia-smi &> /dev/null; then
+        H264_ENCODER="h264_nvenc"
+        echo -e "${GREEN}✓${NC} Detected NVIDIA GPU — using h264_nvenc"
+    elif [ "$(uname -s)" = "Darwin" ] && echo "$ENCODERS" | grep -q " h264_videotoolbox "; then
+        H264_ENCODER="h264_videotoolbox"
+        echo -e "${GREEN}✓${NC} Detected macOS VideoToolbox — using h264_videotoolbox"
+    else
+        echo -e "${GREEN}✓${NC} No GPU encoder detected — using libx264 (CPU)"
+    fi
+fi
+echo ""
+
 # Backend
 echo -e "${BLUE}Setting up backend...${NC}"
 cd backend
@@ -49,6 +70,13 @@ VIDEOGLUE_WORKER=1
 EOF
     echo -e "${GREEN}✓${NC} .env file created"
 fi
+
+# Refresh the encoder line every run so relocating to a new machine
+# (e.g. onto a GPU box) picks up the right encoder without a manual edit.
+grep -v "^VIDEOGLUE_H264_ENCODER=" .env > .env.tmp || true
+mv .env.tmp .env
+echo "VIDEOGLUE_H264_ENCODER=$H264_ENCODER" >> .env
+
 cd ..
 
 # Frontend

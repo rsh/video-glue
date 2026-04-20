@@ -327,6 +327,8 @@ def _run_export(job: ExportJob) -> None:
                 source_fps=fps,
                 start_frame=seg.start_frame + cc.trim_start_frame,
                 end_frame=seg.end_frame - cc.trim_end_frame,
+                source_width=seg.video.width or 0,
+                source_height=seg.video.height or 0,
             )
         )
 
@@ -336,7 +338,11 @@ def _run_export(job: ExportJob) -> None:
 
     try:
         cmd = export_mod.build_command(
-            specs, job.format, out_path, scale_divisor=job.scale_divisor
+            specs,
+            job.format,
+            out_path,
+            scale_divisor=job.scale_divisor,
+            include_audio=job.include_audio,
         )
         total_frames = export_mod.total_output_frames(specs)
 

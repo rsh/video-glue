@@ -29,6 +29,38 @@ VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
 FFMPEG_BIN = os.getenv("FFMPEG_BIN", "ffmpeg")
 FFPROBE_BIN = os.getenv("FFPROBE_BIN", "ffprobe")
 
+# GPU-accelerated H264 encoder to use in place of libx264. Set by setup.sh.
+# Supported: "libx264", "h264_nvenc", "h264_videotoolbox".
+H264_ENCODER = os.getenv("VIDEOGLUE_H264_ENCODER", "libx264")
+
+
+def h264_encoder_args(crf: int, preset: str) -> list[str]:
+    """Return `-c:v ... [quality/preset flags]` for the configured encoder.
+
+    `crf` and `preset` are expressed in libx264 terms (CRF 0-51, presets
+    ultrafast..veryslow) and translated for hardware encoders.
+    """
+    if H264_ENCODER == "h264_nvenc":
+        # NVENC's -cq constant-quality target aligns well with libx264 CRF.
+        # -preset p1 (fastest) .. p7 (slowest).
+        nvenc_preset = {
+            "ultrafast": "p1",
+            "veryfast": "p1",
+            "faster": "p2",
+            "fast": "p3",
+            "medium": "p5",
+            "slow": "p6",
+            "slower": "p7",
+            "veryslow": "p7",
+        }.get(preset, "p5")
+        return ["-c:v", "h264_nvenc", "-cq", str(crf), "-preset", nvenc_preset]
+    if H264_ENCODER == "h264_videotoolbox":
+        # VideoToolbox exposes quality as 1..100 (higher = better).
+        # Map CRF 0->100, 51->0 via a linear fit clamped to sane bounds.
+        q = max(1, min(100, 100 - crf * 2))
+        return ["-c:v", "h264_videotoolbox", "-q:v", str(q)]
+    return ["-c:v", "libx264", "-crf", str(crf), "-preset", preset]
+
 
 def ensure_dirs() -> None:
     for p in (
